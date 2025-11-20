@@ -1,0 +1,15 @@
+{
+  "id": "a1abd298-ebd6-48ec-9b74-48db74f7bf7f",
+  "name": "General Chat",
+  "members": [
+    "testuser7"
+  ],
+  "messages": [
+    {
+      "id": "2d6e7d87-754d-45b6-9f76-bbdbe5b3f107",
+      "user": "testuser7",
+      "text": "Hello World",
+      "timestamp": 1763676961426
+    }
+  ]
+}
