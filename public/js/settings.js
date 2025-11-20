@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const avatarInput = document.getElementById('avatarInput');
   const passwordInput = document.getElementById('passwordInput');
   const saveBtn = document.getElementById('saveBtn');
+  const removeAvatarBtn = document.getElementById('removeAvatarBtn');
   const themeToggle = document.getElementById('themeToggle');
   const logoutBtn = document.getElementById('logoutBtn');
   const backBtn = document.getElementById('backBtn');
@@ -26,12 +27,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Init Values
   avatarPreview.src = user.avatar;
   displayNameInput.value = user.displayName;
-  avatarInput.value = user.avatar;
+  // If avatar is the default ui-avatars one, show empty in input for cleaner UX?
+  // Or show the URL. User request says: "buat jangan ada link ato apa".
+  // So if it contains ui-avatars, maybe show empty?
+  if (user.avatar && user.avatar.includes('ui-avatars.com')) {
+    avatarInput.value = '';
+  } else {
+    avatarInput.value = user.avatar;
+  }
 
   // Save Settings
   saveBtn.addEventListener('click', async () => {
     const displayName = displayNameInput.value;
-    const avatar = avatarInput.value;
+    let avatar = avatarInput.value.trim();
     const password = passwordInput.value;
     const theme = themeToggle.checked ? 'dark' : 'light';
 
@@ -58,6 +66,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Update UI immediate feedback
         avatarPreview.src = user.avatar;
+
+        // Clear input if it matches current avatar which might be default
+        if (user.avatar.includes('ui-avatars.com')) {
+            avatarInput.value = '';
+        }
+
         if (user.theme === 'dark') document.body.classList.add('dark-mode');
         else document.body.classList.remove('dark-mode');
 
@@ -68,6 +82,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       alert('Error connecting to server');
     }
+  });
+
+  // Remove Avatar
+  removeAvatarBtn.addEventListener('click', () => {
+      avatarInput.value = '';
+      // Preview default immediately (guessed) or just wait for save
+      // Let's just wait for save, but we can show a placeholder
+      // Or we can construct the default URL client side for preview
+      const defaultUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayNameInput.value || user.username)}`;
+      avatarPreview.src = defaultUrl;
   });
 
   // Logout
