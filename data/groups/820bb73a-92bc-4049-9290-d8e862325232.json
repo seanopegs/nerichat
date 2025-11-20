@@ -1,0 +1,15 @@
+{
+  "id": "820bb73a-92bc-4049-9290-d8e862325232",
+  "name": "General Chat",
+  "members": [
+    "testuser9"
+  ],
+  "messages": [
+    {
+      "id": "3a9183a8-52bd-4e65-b1b7-19cac4ebabad",
+      "user": "testuser9",
+      "text": "Hello World",
+      "timestamp": 1763677614443
+    }
+  ]
+}
