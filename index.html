@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Simple Live Chat</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f5f7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    .chat-wrapper {
+      width: 100%;
+      max-width: 480px;
+      height: 80vh;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-header {
+      padding: 12px 16px;
+      background: #2563eb;
+      color: #ffffff;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chat-header span {
+      font-size: 12px;
+      opacity: 0.85;
+    }
+    .chat-messages {
+      flex: 1;
+      padding: 12px 16px;
+      overflow-y: auto;
+      background: #f9fafb;
+    }
+    .message {
+      margin-bottom: 8px;
+      max-width: 80%;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+    .message.me {
+      margin-left: auto;
+      background: #2563eb;
+      color: #ffffff;
+      border-bottom-right-radius: 2px;
+    }
+    .message.other {
+      margin-right: auto;
+      background: #e5e7eb;
+      color: #111827;
+      border-bottom-left-radius: 2px;
+    }
+    .message-header {
+      font-size: 11px;
+      font-weight: 600;
+      opacity: 0.8;
+      margin-bottom: 2px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .message-text {
+      font-size: 13px;
+    }
+    .chat-input {
+      display: flex;
+      padding: 10px;
+      border-top: 1px solid #e5e7eb;
+      background: #ffffff;
+      gap: 8px;
+    }
+    #messageInput {
+      flex: 1;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      padding: 8px 12px;
+      font-size: 14px;
+      outline: none;
+    }
+    #messageInput:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+    }
+    #sendBtn {
+      border-radius: 999px;
+      border: none;
+      padding: 0 18px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      background: #2563eb;
+      color: #ffffff;
+      transition: transform 0.05s ease, box-shadow 0.05s ease, opacity 0.2s;
+    }
+    #sendBtn:active {
+      transform: scale(0.97);
+      box-shadow: 0 3px 10px rgba(37,99,235,0.4);
+    }
+    #sendBtn:disabled {
+      opacity: 0.5;
+      cursor: default;
+      box-shadow: none;
+    }
+    .status {
+      font-size: 11px;
+      color: #6b7280;
+      padding: 4px 10px;
+      border-top: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-wrapper">
+    <div class="chat-header">
+      <div>Simple Live Chat</div>
+      <span id="usernameLabel"></span>
+    </div>
+    <div id="messages" class="chat-messages"></div>
+    <div class="status" id="statusBar">Menghubungkan ke server...</div>
+    <div class="chat-input">
+      <input
+        id="messageInput"
+        type="text"
+        placeholder="Ketik pesan lalu tekan Enter..."
+        autocomplete="off"
+      />
+      <button id="sendBtn">Kirim</button>
+    </div>
+  </div>
+
+  <script>
+    const username = prompt("Masukkan nama kamu:", "Guest") || "Guest";
+    const usernameLabel = document.getElementById("usernameLabel");
+    usernameLabel.textContent = "Anda: " + username;
+
+    const messagesDiv = document.getElementById("messages");
+    const statusBar = document.getElementById("statusBar");
+    const input = document.getElementById("messageInput");
+    const sendBtn = document.getElementById("sendBtn");
+
+    let ws;
+
+    function setupWebSocket() {
+      const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
+      ws = new WebSocket(wsProtocol + location.host);
+
+      ws.addEventListener("open", () => {
+        statusBar.textContent = "Terhubung. Ketik pesan dan tekan Enter.";
+        sendBtn.disabled = false;
+      });
+
+      ws.addEventListener("close", () => {
+        statusBar.textContent = "Terputus dari server. Coba refresh halaman.";
+        sendBtn.disabled = true;
+      });
+
+      ws.addEventListener("error", () => {
+        statusBar.textContent = "Terjadi error koneksi.";
+      });
+
+      ws.addEventListener("message", (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          addMessage(data);
+        } catch (e) {
+          addMessage({ user: "Unknown", text: event.data, time: "" });
+        }
+      });
+    }
+
+    function addMessage(data) {
+      const isMe = data.user === username;
+
+      const msgDiv = document.createElement("div");
+      msgDiv.classList.add("message");
+      msgDiv.classList.add(isMe ? "me" : "other");
+
+      const headerDiv = document.createElement("div");
+      headerDiv.classList.add("message-header");
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = data.user || "Unknown";
+      const timeSpan = document.createElement("span");
+      timeSpan.textContent = data.time || "";
+      headerDiv.appendChild(nameSpan);
+      headerDiv.appendChild(timeSpan);
+
+      const textDiv = document.createElement("div");
+      textDiv.classList.add("message-text");
+      textDiv.textContent = data.text || "";
+
+      msgDiv.appendChild(headerDiv);
+      msgDiv.appendChild(textDiv);
+
+      messagesDiv.appendChild(msgDiv);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      const payload = {
+        user: username,
+        text: text,
+        time: new Date().toLocaleTimeString()
+      };
+
+      ws.send(JSON.stringify(payload));
+      input.value = "";
+      input.focus();
+    }
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    sendBtn.addEventListener("click", () => {
+      sendMessage();
+    });
+
+    setupWebSocket();
+  </script>
+</body>
+</html>
