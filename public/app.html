@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat App</title>
+  <link rel="stylesheet" href="css/chat.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="user-profile" title="Click for Settings">
+        <img id="userAvatar" src="" alt="Profile">
+        <div class="info">
+          <div id="userDisplayName" class="name">Loading...</div>
+          <div id="userUsername" class="username">...</div>
+        </div>
+        <i class="fas fa-cog"></i>
+      </div>
+
+      <div class="sidebar-actions">
+        <button id="createGroupBtn" class="btn" style="margin-bottom: 5px;">+ New Group</button>
+        <button id="joinGroupBtn" class="btn" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-color);">Join Group</button>
+      </div>
+
+      <div class="groups-list" id="groupsList">
+        <!-- Group Items -->
+      </div>
+    </div>
+
+    <!-- Chat Area -->
+    <div class="chat-area">
+      <div class="chat-header">
+        <div>
+          <span id="chatHeaderName">Select a group</span>
+          <span id="groupIdDisplay" style="font-size: 0.8rem; color: var(--text-muted); margin-left: 10px; cursor: pointer; display: none;" title="Click to copy ID">
+            <i class="fas fa-copy"></i> <span id="groupIdText"></span>
+          </span>
+        </div>
+      </div>
+
+      <div class="chat-messages" id="messages">
+        <div style="text-align: center; color: var(--text-muted); margin-top: 50px;">
+          Pilih grup untuk memulai chat
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <input type="text" id="messageInput" placeholder="Ketik pesan...">
+        <button id="sendBtn" class="btn"><i class="fas fa-paper-plane"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Group Modal -->
+  <div id="createGroupModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Buat Grup Baru</span>
+        <span class="close-modal">&times;</span>
+      </div>
+      <div class="form-group">
+        <label>Nama Grup</label>
+        <input type="text" id="groupNameInput">
+      </div>
+      <button id="submitCreateGroup" class="btn">Buat</button>
+    </div>
+  </div>
+
+  <script src="js/chat.js"></script>
+</body>
+</html>
