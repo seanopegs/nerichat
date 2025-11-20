@@ -10,34 +10,45 @@
 <body>
   <div class="settings-container">
     <div class="settings-header">
-      <button id="backBtn" class="back-btn"><i class="fas fa-arrow-left"></i></button>
-      <h2>Settings</h2>
+      <button id="backBtn" class="back-btn"><i class="fas fa-arrow-left"></i> Back</button>
+      <h2>Account Settings</h2>
     </div>
 
-    <img id="avatarPreview" src="" alt="Avatar Preview">
+    <div class="avatar-section">
+      <img id="avatarPreview" class="avatar-preview" src="" alt="Avatar Preview">
+      <div class="avatar-actions">
+        <button id="removeAvatarBtn" class="btn btn-secondary">Remove Avatar</button>
+      </div>
+    </div>
 
     <div class="form-group">
       <label>Display Name</label>
-      <input type="text" id="displayNameInput">
+      <input type="text" id="displayNameInput" class="input-field">
     </div>
 
     <div class="form-group">
       <label>Avatar URL</label>
-      <input type="text" id="avatarInput">
+      <input type="text" id="avatarInput" class="input-field" placeholder="https://example.com/image.png">
+      <small style="color:var(--text-muted)">Leave empty for default.</small>
     </div>
 
     <div class="form-group">
       <label>Change Password (Optional)</label>
-      <input type="password" id="passwordInput" placeholder="Leave empty to keep current">
+      <input type="password" id="passwordInput" class="input-field" placeholder="Leave empty to keep current">
     </div>
 
-    <div class="theme-toggle">
-      <label for="themeToggle" style="margin:0; font-weight:600;">Dark Mode</label>
-      <input type="checkbox" id="themeToggle">
+    <div class="theme-toggle-container">
+      <span class="theme-label">Dark Mode</span>
+      <label class="switch">
+        <input type="checkbox" id="themeToggle">
+        <span class="slider round"></span>
+      </label>
     </div>
 
-    <button id="saveBtn" class="btn">Save Changes</button>
-    <button id="logoutBtn" class="btn logout-btn">Logout</button>
+    <div class="actions">
+      <button id="saveBtn" class="btn btn-primary">Save Changes</button>
+      <button id="logoutBtn" class="btn btn-danger">Logout</button>
+    </div>
   </div>
 
   <script src="js/settings.js"></script>
