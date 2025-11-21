@@ -342,12 +342,28 @@
 .read-receipt {
     font-size: 0.8rem;
     transition: color 0.3s;
+    color: #e0e0e0; /* Default: Very light grey for sent (1 tick) */
 }
+.message.me .read-receipt {
+     color: #ddd;
+}
+/* Delivered (2 ticks, not read yet) - "Abu-abu tua" */
+.read-receipt i.fa-check-double {
+    color: #555;
+}
+.message.me .read-receipt i.fa-check-double {
+    color: #555;
+}
+
+/* Read (2 ticks, read) - "Lebih pekat" */
 .read-receipt.read {
-    color: #76ff03; /* Lime green */
+    color: #00C853 !important; /* Darker green */
+}
+.read-receipt.read i {
+    color: #00C853 !important;
 }
 .message.me .read-receipt.read {
-    color: #76ff03;
+    color: #00C853 !important;
 }
 
 

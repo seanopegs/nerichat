@@ -129,11 +129,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       else if (data.type === 'new_message') {
         if (currentGroup && data.groupId === currentGroup.id) {
-           ws.send(JSON.stringify({
-               type: 'read_message',
-               groupId: currentGroup.id,
-               user: user.username
-           }));
+           if (data.message.user !== user.username) {
+               ws.send(JSON.stringify({
+                   type: 'read_message',
+                   groupId: currentGroup.id,
+                   user: user.username
+               }));
+           }
            await appendMessage(data.message);
         } else {
             ws.send(JSON.stringify({
@@ -326,8 +328,10 @@ document.addEventListener('DOMContentLoaded', async () => {
               div.setAttribute('data-read-by', JSON.stringify(readBy));
 
               if (currentGroup.type === 'dm') {
-                   tick.classList.add('read');
-                   tick.innerHTML = '<i class="fas fa-check-double"></i>';
+                   if (readBy.length > 1) {
+                       tick.classList.add('read');
+                       tick.innerHTML = '<i class="fas fa-check-double"></i>';
+                   }
               } else {
                   if (readBy.length >= currentGroup.members.length) {
                        tick.classList.add('read');
@@ -344,14 +348,16 @@ document.addEventListener('DOMContentLoaded', async () => {
           const tick = div.querySelector('.read-receipt');
           if (tick && !tick.classList.contains('read')) {
                const icon = tick.querySelector('i');
-               if (icon && icon.classList.contains('fa-check') && !icon.classList.contains('fa-check-double')) {
+               if (icon && !icon.classList.contains('fa-check-double')) {
                    let receivedBy = div.getAttribute('data-received-by') ? JSON.parse(div.getAttribute('data-received-by')) : [];
                    if (!receivedByUser) return;
                    if (!receivedBy.includes(receivedByUser)) receivedBy.push(receivedByUser);
                    div.setAttribute('data-received-by', JSON.stringify(receivedBy));
 
                    if (currentGroup.type === 'dm') {
-                       tick.innerHTML = '<i class="fas fa-check-double"></i>';
+                       if (receivedBy.length > 1) {
+                           tick.innerHTML = '<i class="fas fa-check-double"></i>';
+                       }
                    } else {
                        if (receivedBy.length >= currentGroup.members.length) {
                            tick.innerHTML = '<i class="fas fa-check-double"></i>';
