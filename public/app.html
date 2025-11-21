@@ -9,7 +9,7 @@
 <body>
   <div class="app-container">
     <!-- Sidebar -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
       <div class="user-profile" title="Click for Settings">
           <div style="position:relative; display:inline-block;">
             <img id="userAvatar" src="" alt="Profile">
@@ -49,9 +49,14 @@
     </div>
 
     <!-- Chat Area -->
-    <div class="chat-area">
+    <div class="chat-area" id="chatArea">
       <div class="chat-header">
         <div style="display:flex; align-items:center; gap:10px;">
+          <!-- Toggle Sidebar Button -->
+          <button id="sidebarToggleBtn" class="btn-icon" style="background:transparent; border:none; color:var(--text-color); font-size:1.2rem; cursor:pointer; margin-right:10px;">
+              <i class="fas fa-bars"></i>
+          </button>
+
           <span id="chatHeaderName">Select a group</span>
           <span id="groupIdDisplay" class="group-id-badge" style="display: none;" title="Click to copy ID">
             ID: <span id="groupIdText"></span> <i class="fas fa-copy"></i>
