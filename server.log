@@ -1,0 +1,8 @@
+
+> simple-live-chat@1.0.0 start
+> node server.js
+
+Server running on port 25577
+Connected to the SQLite database.
+Starting migration check...
+No data directories found. Skipping migration.
