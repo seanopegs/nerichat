@@ -7,6 +7,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let user = JSON.parse(userStr);
 
+  // Fetch latest user data to ensure settings are up to date
+  try {
+    const res = await fetch(`/api/user/${user.username}`);
+    if (res.ok) {
+       const updatedUser = await res.json();
+       // Merge safely
+       user = { ...user, ...updatedUser };
+       localStorage.setItem('chatUser', JSON.stringify(user));
+    }
+  } catch(e) {}
+
+
   // Apply Theme
   if (user.theme === 'dark') {
     document.body.classList.add('dark-mode');
@@ -21,19 +33,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   const saveBtn = document.getElementById('saveBtn');
   const removeAvatarBtn = document.getElementById('removeAvatarBtn');
   const themeToggle = document.getElementById('themeToggle');
+  const invisibleToggle = document.getElementById('invisibleToggle');
   const logoutBtn = document.getElementById('logoutBtn');
   const backBtn = document.getElementById('backBtn');
 
   // Init Values
   avatarPreview.src = user.avatar;
   displayNameInput.value = user.displayName;
-  // If avatar is the default ui-avatars one, show empty in input for cleaner UX?
-  // Or show the URL. User request says: "buat jangan ada link ato apa".
-  // So if it contains ui-avatars, maybe show empty?
   if (user.avatar && user.avatar.includes('ui-avatars.com')) {
     avatarInput.value = '';
   } else {
     avatarInput.value = user.avatar;
+  }
+
+  if (user.invisible) {
+      invisibleToggle.checked = true;
   }
 
   // Save Settings
@@ -42,12 +56,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     let avatar = avatarInput.value.trim();
     const password = passwordInput.value;
     const theme = themeToggle.checked ? 'dark' : 'light';
+    const invisible = invisibleToggle.checked;
 
     const payload = {
       username: user.username,
       displayName,
       avatar,
-      theme
+      theme,
+      invisible
     };
     if (password) payload.password = password;
 
@@ -67,7 +83,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Update UI immediate feedback
         avatarPreview.src = user.avatar;
 
-        // Clear input if it matches current avatar which might be default
         if (user.avatar.includes('ui-avatars.com')) {
             avatarInput.value = '';
         }
@@ -87,9 +102,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Remove Avatar
   removeAvatarBtn.addEventListener('click', () => {
       avatarInput.value = '';
-      // Preview default immediately (guessed) or just wait for save
-      // Let's just wait for save, but we can show a placeholder
-      // Or we can construct the default URL client side for preview
       const defaultUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayNameInput.value || user.username)}`;
       avatarPreview.src = defaultUrl;
   });
