@@ -1,0 +1,10 @@
+
+> simple-live-chat@1.0.0 start
+> node server.js
+
+Server running on port 25577
+Connected to the SQLite database.
+Starting migration check...
+Found 13 user JSON files.
+Found 7 group JSON files.
+Migration check complete.

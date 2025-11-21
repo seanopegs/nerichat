@@ -2,6 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat App</title>
   <link rel="stylesheet" href="css/chat.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -52,8 +53,13 @@
     <div class="chat-area" id="chatArea">
       <div class="chat-header">
         <div style="display:flex; align-items:center; gap:10px;">
+          <!-- Mobile Back Button -->
+          <button id="mobileBackBtn" class="btn-icon mobile-only" style="background:transparent; border:none; color:var(--text-color); font-size:1.2rem; cursor:pointer; margin-right:5px; display: none;">
+              <i class="fas fa-arrow-left"></i>
+          </button>
+
           <!-- Toggle Sidebar Button -->
-          <button id="sidebarToggleBtn" class="btn-icon" style="background:transparent; border:none; color:var(--text-color); font-size:1.2rem; cursor:pointer; margin-right:10px;">
+          <button id="sidebarToggleBtn" class="btn-icon desktop-only" style="background:transparent; border:none; color:var(--text-color); font-size:1.2rem; cursor:pointer; margin-right:10px;">
               <i class="fas fa-bars"></i>
           </button>
 
