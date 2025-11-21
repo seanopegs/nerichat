@@ -85,6 +85,38 @@
     </div>
   </div>
 
+  <!-- Group Info Modal -->
+  <div id="groupInfoModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <span>Group Info</span>
+        <span class="close-modal-info">&times;</span>
+      </div>
+      <div class="group-info-header" style="text-align:center; margin-bottom:20px;">
+          <img id="infoGroupAvatar" src="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin-bottom:10px;">
+          <h3 id="infoGroupName" style="margin:0;"></h3>
+          <small id="infoGroupId" style="color:var(--text-muted); user-select: text;"></small>
+          <div id="ownerControls" class="hidden" style="margin-top:10px;">
+             <button id="resetGroupIdBtn" class="btn btn-sm btn-secondary">Reset Group ID</button>
+             <button id="deleteGroupBtn" class="btn btn-sm btn-danger">Delete Group</button>
+             <div style="margin-top:5px">
+                 <input type="text" id="editGroupAvatarInput" placeholder="New Avatar URL" class="input-field" style="font-size:0.8rem; padding:5px;">
+                 <button id="saveGroupSettingsBtn" class="btn btn-sm btn-primary">Save Settings</button>
+             </div>
+          </div>
+      </div>
+
+      <div style="max-height: 300px; overflow-y:auto;">
+          <h4 style="margin-bottom:10px; border-bottom:1px solid var(--border-color);">Members</h4>
+          <div id="groupMembersList"></div>
+      </div>
+
+      <div class="modal-footer" style="margin-top:20px; text-align:right;">
+          <button id="leaveGroupBtn" class="btn btn-danger">Leave Group</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Friend Modal -->
   <div id="addFriendModal" class="modal hidden">
     <div class="modal-content">
