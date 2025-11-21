@@ -1,0 +1,12 @@
+{
+  "username": "testuser1",
+  "password": "password",
+  "displayName": "Test User",
+  "avatar": "https://ui-avatars.com/api/?name=Test%20User",
+  "theme": "light",
+  "groups": [
+    "a50d6909-cf3d-41ca-9d1a-acc688608407"
+  ],
+  "friends": [],
+  "friendRequests": []
+}

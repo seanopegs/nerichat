@@ -274,10 +274,10 @@
     font-size: 0.8rem;
 }
 .read-receipt.read {
-    color: #4fc3f7; /* Light blue for dark mode/primary bg */
+    color: #76ff03; /* Lime green */
 }
 .message.me .read-receipt.read {
-    color: #d1f4ff;
+    color: #76ff03;
 }
 
 
