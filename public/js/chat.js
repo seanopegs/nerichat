@@ -300,7 +300,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           pinIcon = '<i class="fas fa-thumbtack" style="color:var(--primary); margin-right:5px; font-size:0.8rem;"></i>';
       }
 
-      div.innerHTML = `${pinIcon}<i class="fas fa-hashtag"></i> ${group.name} ${badge}`;
+      let iconHtml = '<i class="fas fa-hashtag" style="padding: 0 10px;"></i>';
+      if (group.avatar) {
+          iconHtml = `<img src="${group.avatar}" style="width:36px;height:36px;border-radius:50%; margin-right: 5px;">`;
+      }
+
+      div.innerHTML = `${pinIcon}${iconHtml} ${group.name} ${badge}`;
       div.onclick = () => switchGroup(group);
 
       div.addEventListener('contextmenu', (e) => {
@@ -508,9 +513,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     contentDiv.addEventListener('mousedown', (e) => {
         if(e.button !== 0) return;
         isLongPress = false;
+        const pageX = e.pageX;
+        const pageY = e.pageY;
         pressTimer = setTimeout(() => {
             isLongPress = true;
-            showMessageContextMenu(null, msg, userInfo);
+            showMessageContextMenu({ pageX, pageY }, msg, userInfo);
         }, 600);
     });
 
@@ -1119,7 +1126,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       contextMenu.appendChild(createOption("View Profile", "fas fa-user", () => {
-          alert(`Username: ${friend.username}\nDisplay Name: ${friend.displayName}`);
+          const modal = document.getElementById('userProfileModal');
+          document.getElementById('profileModalAvatar').src = friend.avatar;
+          document.getElementById('profileModalName').textContent = friend.displayName;
+          document.getElementById('profileModalUsername').textContent = '@' + friend.username;
+
+          const statusEl = document.getElementById('profileModalStatus');
+          const isOnline = userStatus[friend.username] === 'online';
+          statusEl.textContent = isOnline ? 'Online' : 'Offline';
+          statusEl.style.color = isOnline ? 'var(--success)' : 'var(--text-muted)';
+          statusEl.style.border = `1px solid ${isOnline ? 'var(--success)' : 'var(--border-color)'}`;
+          statusEl.style.background = isOnline ? 'rgba(16, 185, 129, 0.1)' : 'transparent';
+
+          document.getElementById('profileModalMessageBtn').onclick = () => {
+              modal.classList.add('hidden');
+              startDM(friend);
+          };
+
+          modal.classList.remove('hidden');
+          modal.querySelector('.close-modal-profile').onclick = () => modal.classList.add('hidden');
       }));
 
       contextMenu.appendChild(createOption("Unfriend", "fas fa-user-minus", async () => {

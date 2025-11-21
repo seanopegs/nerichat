@@ -128,8 +128,8 @@
     height: 12px;
     border-radius: 50%;
     position: absolute;
-    bottom: 10px;
-    left: 42px; /* Adjust based on img + padding */
+    bottom: 0px;
+    right: 0px;
     border: 2px solid var(--card-bg);
 }
 .status-online { background-color: #3b82f6; } /* Blue */
