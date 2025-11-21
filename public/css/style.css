@@ -148,6 +148,15 @@ input[type="password"]:focus {
   border-radius: 16px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.08);
   text-align: center;
+  width: 90%;
+}
+
+@media (max-width: 768px) {
+  .auth-container {
+    margin: 2rem auto;
+    padding: 1.5rem;
+    width: 90%;
+  }
 }
 
 .auth-header {

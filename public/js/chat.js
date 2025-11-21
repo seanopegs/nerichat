@@ -74,6 +74,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const sidebar = document.getElementById('sidebar');
   const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+  const chatArea = document.getElementById('chatArea');
+  const mobileBackBtn = document.getElementById('mobileBackBtn');
 
   // --- Initialization ---
 
@@ -518,6 +520,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function switchGroup(group) {
     currentGroup = group;
+
+    // Mobile: Slide in Chat Area
+    if (window.innerWidth <= 768) {
+        chatArea.classList.add('active');
+    }
+
     chatHeaderName.textContent = group.type === 'dm' ? group.name : `# ${group.name}`;
 
     if (group.type === 'group') {
@@ -1329,6 +1337,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // --- Event Listeners ---
+
+  if (mobileBackBtn) {
+      mobileBackBtn.addEventListener('click', () => {
+          chatArea.classList.remove('active');
+          currentGroup = null; // Optional: deselect group
+          // Need to clear active state in list
+          document.querySelectorAll('.group-item, .friend-item').forEach(el => el.classList.remove('active'));
+      });
+  }
 
   if (sidebarToggleBtn) {
       sidebarToggleBtn.addEventListener('click', () => {
