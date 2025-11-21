@@ -1,0 +1,12 @@
+
+> simple-live-chat@1.0.0 start
+> node server.js
+
+Server running on port 25577
+Connected to the SQLite database.
+Starting migration check...
+Found 13 user JSON files.
+Error migrating user testuser1.json: [Error: SQLITE_ERROR: no such table: users] {
+  errno: 1,
+  code: 'SQLITE_ERROR'
+}

@@ -1,4 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if already logged in
+  if (localStorage.getItem('chatUser')) {
+      window.location.href = '/app.html';
+      return;
+  }
+
   const loginForm = document.getElementById('loginForm');
   const registerForm = document.getElementById('registerForm');
   const showRegister = document.getElementById('showRegister');

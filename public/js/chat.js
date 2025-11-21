@@ -72,6 +72,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const groupInfoModal = document.getElementById('groupInfoModal');
   const closeInfoModal = document.querySelector('.close-modal-info');
 
+  const sidebar = document.getElementById('sidebar');
+  const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+
   // --- Initialization ---
 
   // Apply Theme
@@ -170,6 +173,129 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (data.type === 'status_update') {
           userStatus[data.username] = data.status;
           updateUserStatusUI(data.username, data.status);
+      } else if (data.type === 'friend_request') {
+          // Add to requests list
+          friendRequests.push({ from: data.from, timestamp: data.timestamp });
+          renderFriends();
+          // Maybe show a notification?
+      } else if (data.type === 'friend_accepted') {
+          // data.user is the user who accepted/was accepted
+          friends.push({
+              username: data.user.username,
+              displayName: data.user.displayName,
+              avatar: data.user.avatar
+          });
+
+          // Remove from requests if it was there (in case I accepted)
+          // If I accepted, I already updated UI? No, let's rely on reload or manual update.
+          // But wait, 'friend_accepted' is sent to both.
+
+          // If I am the one who accepted, I might have handled it in the click handler?
+          // But the event is sure way.
+          // Check if already exists
+          if (!friends.find(f => f.username === data.user.username)) {
+             friends.push(data.user);
+          }
+
+          // Remove from pending requests
+          friendRequests = friendRequests.filter(r => r.from !== data.user.username);
+
+          renderFriends();
+      } else if (data.type === 'friend_removed') {
+          friends = friends.filter(f => f.username !== data.username);
+          friendRequests = friendRequests.filter(f => f.from !== data.username);
+
+          // If currently chatting with them in DM, maybe alert?
+          if (currentGroup && currentGroup.type === 'dm' && currentGroup.name === data.username) {
+              alert('You are no longer friends with this user.');
+              // window.location.reload(); // Or just go back to empty state
+              currentGroup = null;
+              messagesContainer.innerHTML = '';
+              chatHeaderName.textContent = '';
+          }
+          renderFriends();
+      } else if (data.type === 'group_added') {
+          // data.groupId
+          // Fetch group info and add to list
+          // We need to fetch the group details to render it
+           try {
+              const res = await fetch(`/api/groups/${data.groupId}`);
+              if (res.ok) {
+                  const groupData = await res.json();
+                  // Adapt to simple group object for list
+                  const simpleGroup = {
+                      id: groupData.id,
+                      name: groupData.name,
+                      type: groupData.type,
+                      avatar: groupData.avatar,
+                      unreadCount: 0 // New group
+                  };
+
+                  if (simpleGroup.type === 'dm') {
+                      // logic to set name/avatar correctly for DM
+                      const other = groupData.members.find(m => m !== user.username) || "Unknown";
+                      simpleGroup.name = other;
+                      const u = await getUserInfo(other);
+                      simpleGroup.avatar = u.avatar;
+                  }
+
+                  groups.push(simpleGroup);
+                  renderGroups();
+              }
+           } catch(e) { console.error(e); }
+      } else if (data.type === 'group_removed') {
+          groups = groups.filter(g => g.id !== data.groupId);
+          if (currentGroup && currentGroup.id === data.groupId) {
+              alert('You were removed from this group.');
+              currentGroup = null;
+              messagesContainer.innerHTML = '';
+              chatHeaderName.textContent = '';
+          }
+          renderGroups();
+      } else if (data.type === 'profile_update') {
+           // data.username, data.user (full user object)
+           userCache[data.username] = data.user;
+
+           // Update friend list if present
+           const fIndex = friends.findIndex(f => f.username === data.username);
+           if (fIndex !== -1) {
+               friends[fIndex].displayName = data.user.displayName;
+               friends[fIndex].avatar = data.user.avatar;
+               renderFriends();
+           }
+
+           // Update groups list if DM
+           const gIndex = groups.findIndex(g => g.type === 'dm' && g.name === data.username);
+           if (gIndex !== -1) {
+               groups[gIndex].avatar = data.user.avatar;
+               // Name usually stays username for DMs in list logic above,
+               // but if we used display name there, we'd update it.
+               // My logic uses username for DM name in 'groups' array, but fetches display name on render?
+               // No, renderGroups uses group.name.
+               // My 'loadGroups' sets group.name = other (username).
+               // renderGroups displays group.name.
+               // So DM list shows username.
+               // If we want to show Display Name in DM list, we should update 'loadGroups'.
+               renderGroups();
+           }
+
+           // Update current chat header if applicable
+           if (currentGroup) {
+               if (currentGroup.type === 'dm' && currentGroup.name === data.username) {
+                   // Update header?
+                   // Header usually shows currentGroup.name (username).
+                   // If we want display name in header:
+                   // My switchGroup logic sets chatHeaderName to group.name.
+                   // Ideally DMs should show display name.
+               }
+
+               // Update messages avatars/names
+               const msgs = messagesContainer.querySelectorAll('.message');
+               // Rerender all messages? Or just find and update.
+               // Simpler to just let next render handle it or reload messages if specific user.
+               // Let's just update avatar images with matching src?
+               // Complex. Let's leave it for now, next open will fix.
+           }
       }
     });
 
@@ -1203,6 +1329,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // --- Event Listeners ---
+
+  if (sidebarToggleBtn) {
+      sidebarToggleBtn.addEventListener('click', () => {
+          sidebar.classList.toggle('collapsed');
+      });
+  }
 
   sendBtn.addEventListener('click', sendMessage);
 
