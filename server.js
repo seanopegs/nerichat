@@ -724,9 +724,23 @@ wss.on("connection", (ws) => {
         console.log(`WS: User ${currentUser} connected`);
 
         const user = await get(`SELECT invisible FROM users WHERE username = ?`, [currentUser]);
-        if (user && !user.invisible) {
+        ws.isInvisible = user ? !!user.invisible : false;
+
+        if (!ws.isInvisible) {
             broadcastStatusUpdate(currentUser, 'online');
         }
+
+        // Send status of currently connected users to the new user
+        clients.forEach((clientWs, clientUsername) => {
+            if (clientUsername === currentUser) return;
+            if (clientWs.readyState === WebSocket.OPEN && !clientWs.isInvisible) {
+                ws.send(JSON.stringify({
+                    type: 'status_update',
+                    username: clientUsername,
+                    status: 'online'
+                }));
+            }
+        });
       }
       else if (data.type === "message") {
         const { groupId, text, user, replyTo } = data;
