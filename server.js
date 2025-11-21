@@ -63,6 +63,25 @@ function broadcastToGroup(group, data) {
   });
 }
 
+function broadcastStatusUpdate(username, status) {
+    const msgString = JSON.stringify({
+        type: 'status_update',
+        username: username,
+        status: status
+    });
+
+    // We need to broadcast to all friends of this user and all group members of common groups.
+    // A simpler approach for this scope is to broadcast to all connected clients,
+    // or iterate all users and check relationship.
+    // Given "broadcast to all" is simplest for small scale, but let's try to be slightly targeted or just broadcast all.
+    // Broadcasting to all is fine for now.
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(msgString);
+        }
+    });
+}
+
 function createSystemMessage(group, text) {
     const msgObj = {
         id: crypto.randomUUID(),
@@ -108,6 +127,7 @@ app.post("/api/register", (req, res) => {
     displayName: displayName || username,
     avatar: "https://ui-avatars.com/api/?name=" + encodeURIComponent(displayName || username),
     theme: "light",
+    invisible: false,
     groups: [],
     friends: [],
     friendRequests: []
@@ -136,7 +156,8 @@ app.post("/api/login", (req, res) => {
       username: user.username,
       displayName: user.displayName,
       avatar: user.avatar,
-      theme: user.theme
+      theme: user.theme,
+      invisible: user.invisible || false
     }
   });
 });
@@ -168,7 +189,7 @@ app.get("/api/users/search", (req, res) => {
 
 // Update Settings
 app.post("/api/user/settings", (req, res) => {
-  const { username, displayName, avatar, theme, password } = req.body;
+  const { username, displayName, avatar, theme, password, invisible } = req.body;
   const filepath = getUserFilePath(username);
   const user = readJSON(filepath);
 
@@ -187,7 +208,27 @@ app.post("/api/user/settings", (req, res) => {
   if (theme) user.theme = theme;
   if (password) user.password = password;
 
+  let statusChanged = false;
+  if (invisible !== undefined) {
+      if (user.invisible !== invisible) {
+          user.invisible = invisible;
+          statusChanged = true;
+      }
+  }
+
   writeJSON(filepath, user);
+
+  if (statusChanged) {
+      // If invisible is true, broadcast offline. If false, broadcast online (assuming connected).
+      const ws = clients.get(username);
+      const isOnline = ws && ws.readyState === WebSocket.OPEN;
+
+      let statusToBroadcast = 'offline';
+      if (!user.invisible && isOnline) {
+          statusToBroadcast = 'online';
+      }
+      broadcastStatusUpdate(username, statusToBroadcast);
+  }
 
   const { password: _, ...safeUser } = user;
   res.json({ success: true, user: safeUser });
@@ -756,6 +797,12 @@ wss.on("connection", (ws) => {
         currentUser = data.username;
         clients.set(currentUser, ws);
         console.log(`WS: User ${currentUser} connected`);
+
+        // Broadcast Online if not invisible
+        const user = readJSON(getUserFilePath(currentUser));
+        if (user && !user.invisible) {
+            broadcastStatusUpdate(currentUser, 'online');
+        }
       }
       else if (data.type === "message") {
         const { groupId, text, user, replyTo } = data;
@@ -773,7 +820,6 @@ wss.on("connection", (ws) => {
                 const until = group.muted[user];
                 if (until === -1 || until > Date.now()) {
                     // User is muted
-                    // Send error to user
                     const ws = clients.get(user);
                     if (ws) {
                         ws.send(JSON.stringify({
@@ -811,22 +857,11 @@ wss.on("connection", (ws) => {
       else if (data.type === "received_message") {
           const { groupId, user, messageId } = data;
 
-          // To handle multiple messages or batch, usually an array.
-          // But let's stick to simpler update: Mark "all before X" or just "this message".
-          // If the user sends received for a message, we add them to receivedBy.
-          // To make it simple: Update the group file and broadcast.
-
            const groupPath = getGroupFilePath(groupId);
            const group = readJSON(groupPath);
 
            if (group) {
                let changed = false;
-               // Find the message or if we want "Received all messages in this group"?
-               // Usually "Opened app, got update" -> "Received".
-               // Let's assume client sends this for specific messages or latest.
-               // If data has messageId, update that. If not, update all unreceived?
-               // Let's try to update all messages the user hasn't marked as received yet.
-
                group.messages.forEach(msg => {
                    if (msg.type === 'system') return;
                    if (!msg.receivedBy) msg.receivedBy = [];
@@ -842,7 +877,7 @@ wss.on("connection", (ws) => {
                        type: "delivery_update",
                        groupId,
                        user,
-                       receivedBy: user // informs others this user received them
+                       receivedBy: user
                    });
                }
            }
@@ -860,7 +895,6 @@ wss.on("connection", (ws) => {
                 if (!msg.readBy) msg.readBy = [];
                 if (!msg.receivedBy) msg.receivedBy = [];
 
-                // If read, it must be received
                 if (!msg.receivedBy.includes(user)) {
                     msg.receivedBy.push(user);
                     changed = true;
@@ -874,7 +908,6 @@ wss.on("connection", (ws) => {
 
             if (changed) {
                 writeJSON(groupPath, group);
-                // Broadcast
                 broadcastToGroup(group, {
                     type: "read_update",
                     groupId,
@@ -891,6 +924,17 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     if (currentUser) {
+      // Broadcast Offline (if not invisible, actually we can just broadcast offline regardless, logic on client? No, client doesn't know if invisible)
+      // Check if user was invisible
+      const user = readJSON(getUserFilePath(currentUser));
+      // If user was invisible, they were already "offline" to others, so no need to broadcast offline?
+      // But if they just disconnected, they are definitely offline.
+      // If they were invisible, they appeared offline. So disconnection changes nothing visually.
+      // If they were visible, broadcast offline.
+      if (user && !user.invisible) {
+          broadcastStatusUpdate(currentUser, 'offline');
+      }
+
       clients.delete(currentUser);
       console.log(`WS: User ${currentUser} disconnected`);
     }
