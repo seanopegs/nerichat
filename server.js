@@ -193,6 +193,31 @@ app.post("/api/user/settings", (req, res) => {
   res.json({ success: true, user: safeUser });
 });
 
+// Pin Chat
+app.post("/api/user/pin", (req, res) => {
+    const { username, groupId, action } = req.body;
+    const filepath = getUserFilePath(username);
+    const user = readJSON(filepath);
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    if (!user.pinned_chats) user.pinned_chats = [];
+
+    if (action === 'pin') {
+        if (user.pinned_chats.length >= 3) {
+            return res.status(400).json({ error: "Max 3 pinned chats allowed" });
+        }
+        if (!user.pinned_chats.includes(groupId)) {
+            user.pinned_chats.push(groupId);
+        }
+    } else if (action === 'unpin') {
+        user.pinned_chats = user.pinned_chats.filter(id => id !== groupId);
+    }
+
+    writeJSON(filepath, user);
+    res.json({ success: true, pinned_chats: user.pinned_chats });
+});
+
 // --- Friend Routes ---
 
 app.get("/api/friends", (req, res) => {
@@ -310,6 +335,8 @@ app.post("/api/groups", (req, res) => {
     messages: [],
     owner: creator,
     admins: [],
+        muted: {}, // { username: timestamp }
+        invite_permission: 'admin', // 'admin' or 'all'
     avatar: "https://ui-avatars.com/api/?name=" + encodeURIComponent(name || "Group")
   };
 
@@ -330,7 +357,8 @@ app.post("/api/groups", (req, res) => {
   res.json({ success: true, group: newGroup });
 });
 
-// Join Group
+// Join Group (Manual via ID - usually for public, but let's keep it open or restrict?)
+// User didn't specify restricting 'join', only 'invite'.
 app.post("/api/groups/join", (req, res) => {
   const { groupId, username } = req.body;
   const groupPath = getGroupFilePath(groupId);
@@ -343,6 +371,7 @@ app.post("/api/groups/join", (req, res) => {
   if (!group.members.includes(username)) {
     group.members.push(username);
     createSystemMessage(group, `${username} joined the group`);
+    writeJSON(groupPath, group);
   }
 
   if (!user.groups.includes(groupId)) {
@@ -351,6 +380,116 @@ app.post("/api/groups/join", (req, res) => {
   }
 
   res.json({ success: true, group });
+});
+
+// Invite Friend to Group
+app.post("/api/groups/invite", (req, res) => {
+    const { groupId, requester, target } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+    const reqUserPath = getUserFilePath(requester);
+    const reqUser = readJSON(reqUserPath);
+    const targetUserPath = getUserFilePath(target);
+    const targetUser = readJSON(targetUserPath);
+
+    if (!group || !reqUser || !targetUser) return res.status(404).json({ error: "Not found" });
+
+    // Check if target is friend of requester
+    if (!reqUser.friends || !reqUser.friends.includes(target)) {
+        return res.status(403).json({ error: "Can only invite friends" });
+    }
+
+    // Check Permission
+    const isOwner = group.owner === requester;
+    const isAdmin = group.admins && group.admins.includes(requester);
+    const perm = group.invite_permission || 'admin';
+
+    let allowed = false;
+    if (perm === 'all') allowed = group.members.includes(requester);
+    else if (perm === 'admin') allowed = isOwner || isAdmin;
+
+    if (!allowed) return res.status(403).json({ error: "You do not have permission to invite" });
+
+    if (group.members.includes(target)) return res.status(400).json({ error: "User already in group" });
+
+    group.members.push(target);
+    writeJSON(groupPath, group);
+
+    if (!targetUser.groups.includes(groupId)) {
+        targetUser.groups.push(groupId);
+        writeJSON(targetUserPath, targetUser);
+    }
+
+    createSystemMessage(group, `${requester} added ${target} to the group`);
+
+    res.json({ success: true });
+});
+
+// Mute Member
+app.post("/api/groups/mute", (req, res) => {
+    const { groupId, requester, target, duration } = req.body; // duration in seconds, -1 for permanent
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    const isOwner = group.owner === requester;
+    const isAdmin = group.admins && group.admins.includes(requester);
+
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: "Permission denied" });
+
+    // Hierarchy Check
+    if (target === group.owner) return res.status(403).json({ error: "Cannot mute owner" });
+    if (isAdmin && !isOwner && group.admins && group.admins.includes(target)) return res.status(403).json({ error: "Admin cannot mute admin" });
+
+    if (!group.muted) group.muted = {};
+
+    // Duration logic
+    let mutedUntil = -1;
+    if (duration > 0) {
+        mutedUntil = Date.now() + (duration * 1000);
+    }
+
+    group.muted[target] = mutedUntil;
+    writeJSON(groupPath, group);
+
+    createSystemMessage(group, `${target} was muted by ${requester}`);
+    res.json({ success: true });
+});
+
+// Unmute Member
+app.post("/api/groups/unmute", (req, res) => {
+    const { groupId, requester, target } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    const isOwner = group.owner === requester;
+    const isAdmin = group.admins && group.admins.includes(requester);
+
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: "Permission denied" });
+
+    // Hierarchy Check: Admin cannot unmute if muted by Owner?
+    // User said "Admin gbs toggle off diri sendiri klo di mute owner".
+    // Simplification: If admin tries to unmute someone, check if they have higher rank?
+    // For now, let's just allow unmuting anyone except Admin/Owner hierarchy rules applies usually.
+    // If target is Admin, only Owner can mute them, so only Owner can unmute them ideally?
+    // Or if Admin muted Member, Admin can unmute.
+    // But we don't store *who* muted them.
+    // Let's just apply standard hierarchy: Admin can unmute Member. Owner can unmute anyone.
+
+    if (isAdmin && !isOwner) {
+        if (group.admins && group.admins.includes(target)) return res.status(403).json({ error: "Admin cannot unmute admin" });
+    }
+
+    if (group.muted && group.muted[target] !== undefined) {
+        delete group.muted[target];
+        writeJSON(groupPath, group);
+        createSystemMessage(group, `${target} was unmuted by ${requester}`);
+    }
+
+    res.json({ success: true });
 });
 
 // Leave Group
@@ -537,9 +676,9 @@ app.post("/api/groups/reset-id", (req, res) => {
     }
 });
 
-// Update Group Settings (Name/Avatar)
+// Update Group Settings (Name/Avatar/Permissions)
 app.post("/api/groups/settings", (req, res) => {
-    const { groupId, requester, name, avatar } = req.body;
+    const { groupId, requester, name, avatar, invite_permission } = req.body;
     const groupPath = getGroupFilePath(groupId);
     const group = readJSON(groupPath);
 
@@ -548,6 +687,7 @@ app.post("/api/groups/settings", (req, res) => {
 
     if (name) group.name = name;
     if (avatar !== undefined) group.avatar = avatar;
+    if (invite_permission) group.invite_permission = invite_permission;
 
     writeJSON(groupPath, group);
 
@@ -576,7 +716,17 @@ app.get("/api/my-groups", (req, res) => {
               const otherUser = readJSON(getUserFilePath(other));
               if (otherUser) avatar = otherUser.avatar;
           }
-          groups.push({ id: g.id, name: name, type: g.type, avatar: avatar });
+
+          // Calculate unread count
+          let unread = 0;
+          if (g.messages) {
+              unread = g.messages.filter(m =>
+                  m.type !== 'system' &&
+                  (!m.readBy || !m.readBy.includes(username))
+              ).length;
+          }
+
+          groups.push({ id: g.id, name: name, type: g.type, avatar: avatar, unreadCount: unread });
       }
     }
   }
@@ -608,7 +758,7 @@ wss.on("connection", (ws) => {
         console.log(`WS: User ${currentUser} connected`);
       }
       else if (data.type === "message") {
-        const { groupId, text, user } = data;
+        const { groupId, text, user, replyTo } = data;
 
         if (!groupId || !text || !user) return;
 
@@ -618,10 +768,32 @@ wss.on("connection", (ws) => {
         if (group) {
             if (!group.members.includes(user)) return;
 
+            // Check Mute Status
+            if (group.muted && group.muted[user] !== undefined) {
+                const until = group.muted[user];
+                if (until === -1 || until > Date.now()) {
+                    // User is muted
+                    // Send error to user
+                    const ws = clients.get(user);
+                    if (ws) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: `You are muted until ${until === -1 ? 'forever' : new Date(until).toLocaleString()}`
+                        }));
+                    }
+                    return;
+                } else {
+                    // Expired
+                    delete group.muted[user];
+                    writeJSON(groupPath, group);
+                }
+            }
+
             const msgObj = {
                 id: crypto.randomUUID(),
                 user,
                 text,
+                replyTo,
                 timestamp: Date.now(),
                 readBy: [user],
                 receivedBy: [user]

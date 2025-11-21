@@ -28,6 +28,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   const messageInput = document.getElementById('messageInput');
   const sendBtn = document.getElementById('sendBtn');
 
+  // Reply State
+  let replyToMessage = null;
+  const chatInputArea = document.querySelector('.chat-input-area');
+
+  // Create Reply Banner (Hidden by default)
+  const replyBanner = document.createElement('div');
+  replyBanner.className = 'reply-banner hidden';
+  replyBanner.style.padding = '10px';
+  replyBanner.style.background = 'var(--bg-color)';
+  replyBanner.style.borderTop = '1px solid var(--border-color)';
+  replyBanner.style.display = 'none'; // Hidden initially
+  replyBanner.style.alignItems = 'center';
+  replyBanner.style.justifyContent = 'space-between';
+
+  replyBanner.innerHTML = `
+    <div style="display:flex; flex-direction:column; overflow:hidden;">
+       <span style="font-size:0.8rem; color:var(--primary); font-weight:bold;">Replying to <span id="replyToUser"></span></span>
+       <span id="replyToText" style="font-size:0.8rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+    </div>
+    <button id="cancelReplyBtn" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">&times;</button>
+  `;
+
+  // Insert before chat input
+  chatInputArea.parentNode.insertBefore(replyBanner, chatInputArea);
+
+  document.getElementById('cancelReplyBtn').onclick = () => {
+      replyToMessage = null;
+      replyBanner.style.display = 'none';
+  };
+
   // Modals
   const createGroupBtn = document.getElementById('createGroupBtn');
   const createGroupModal = document.getElementById('createGroupModal');
@@ -83,7 +113,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     ws.addEventListener('message', async (event) => {
       const data = JSON.parse(event.data);
 
-      if (data.type === 'new_message') {
+      if (data.type === 'error') {
+          alert(data.message);
+      }
+      else if (data.type === 'new_message') {
         if (currentGroup && data.groupId === currentGroup.id) {
            // Send Read Receipt immediately if we are viewing this group
            ws.send(JSON.stringify({
@@ -100,6 +133,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                user: user.username,
                messageId: data.message.id
            }));
+            // Increment unread count locally
+            const gIndex = groups.findIndex(g => g.id === data.groupId);
+            if (gIndex !== -1) {
+                if (!groups[gIndex].unreadCount) groups[gIndex].unreadCount = 0;
+                groups[gIndex].unreadCount++;
+                renderGroups();
+                renderFriends();
+            }
         }
       } else if (data.type === 'read_update') {
           if (currentGroup && data.groupId === currentGroup.id) {
@@ -239,9 +280,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadGroups() {
     try {
+      // Re-fetch user to get pinned chats
+      const userRes = await fetch(`/api/user/${user.username}`);
+      if (userRes.ok) {
+          const userData = await userRes.json();
+          user.pinned_chats = userData.pinned_chats || [];
+      }
+
       const res = await fetch(`/api/my-groups?username=${user.username}`);
       const data = await res.json();
       groups = data.groups;
+
+      // Sort groups: Pinned first, then alphabetical (or last msg if we had it)
+      groups.sort((a, b) => {
+          const aPinned = user.pinned_chats && user.pinned_chats.includes(a.id);
+          const bPinned = user.pinned_chats && user.pinned_chats.includes(b.id);
+          if (aPinned && !bPinned) return -1;
+          if (!aPinned && bPinned) return 1;
+          return a.name.localeCompare(b.name);
+      });
+
       renderGroups();
     } catch (err) {
       console.error(err);
@@ -256,12 +314,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const div = document.createElement('div');
       div.className = `group-item ${currentGroup && currentGroup.id === group.id ? 'active' : ''}`;
-      div.innerHTML = `<i class="fas fa-hashtag"></i> ${group.name}`;
+
+      let badge = '';
+      if (group.unreadCount > 0) {
+          badge = `<span style="background:red; color:white; border-radius:50%; padding:2px 6px; font-size:0.7rem; margin-left:auto;">${group.unreadCount}</span>`;
+      }
+
+      let pinIcon = '';
+      if (user.pinned_chats && user.pinned_chats.includes(group.id)) {
+          pinIcon = '<i class="fas fa-thumbtack" style="color:var(--primary); margin-right:5px; font-size:0.8rem;"></i>';
+      }
+
+      div.innerHTML = `${pinIcon}<i class="fas fa-hashtag"></i> ${group.name} ${badge}`;
       div.onclick = () => switchGroup(group);
-      // Add Right Click / Double Click for Settings
+
+      // Context Menu
       div.addEventListener('contextmenu', (e) => {
           e.preventDefault();
-          openGroupInfo(group);
+          showContextMenu(e, group);
       });
       div.addEventListener('dblclick', (e) => {
           e.preventDefault();
@@ -270,6 +340,79 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       groupsList.appendChild(div);
     });
+  }
+
+  // Generic Context Menu
+  let contextMenu = null;
+
+  function showContextMenu(e, target) {
+      if (contextMenu) document.body.removeChild(contextMenu);
+
+      contextMenu = document.createElement('div');
+      contextMenu.className = 'context-menu';
+      contextMenu.style.position = 'absolute';
+      contextMenu.style.left = e.pageX + 'px';
+      contextMenu.style.top = e.pageY + 'px';
+      contextMenu.style.background = 'var(--card-bg)';
+      contextMenu.style.border = '1px solid var(--border-color)';
+      contextMenu.style.borderRadius = '8px';
+      contextMenu.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+      contextMenu.style.zIndex = '2000';
+      contextMenu.style.minWidth = '150px';
+      contextMenu.style.overflow = 'hidden';
+
+      const createOption = (text, iconClass, onClick) => {
+          const div = document.createElement('div');
+          div.style.padding = '10px 15px';
+          div.style.cursor = 'pointer';
+          div.style.display = 'flex';
+          div.style.alignItems = 'center';
+          div.style.gap = '10px';
+          div.innerHTML = `<i class="${iconClass}"></i> ${text}`;
+          div.onmouseover = () => div.style.background = 'var(--bg-color)';
+          div.onmouseout = () => div.style.background = 'transparent';
+          div.onclick = () => {
+              document.body.removeChild(contextMenu);
+              contextMenu = null;
+              onClick();
+          };
+          return div;
+      };
+
+      // Pin Option
+      const isPinned = user.pinned_chats && user.pinned_chats.includes(target.id);
+      contextMenu.appendChild(createOption(isPinned ? "Unpin" : "Pin", "fas fa-thumbtack", async () => {
+          const res = await fetch('/api/user/pin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: user.username, groupId: target.id, action: isPinned ? 'unpin' : 'pin' })
+          });
+          if (res.ok) {
+              const data = await res.json();
+              if (data.error) alert(data.error);
+              else {
+                  user.pinned_chats = data.pinned_chats; // Update local
+                  await loadGroups(); // Re-sort and render
+              }
+          }
+      }));
+
+      // Info Option (if group)
+      if (target.type === 'group') {
+          contextMenu.appendChild(createOption("Group Info", "fas fa-info-circle", () => openGroupInfo(target)));
+      }
+
+      document.body.appendChild(contextMenu);
+
+      // Close on click elsewhere
+      const close = () => {
+          if (contextMenu && document.body.contains(contextMenu)) {
+              document.body.removeChild(contextMenu);
+              contextMenu = null;
+          }
+          document.removeEventListener('click', close);
+      };
+      setTimeout(() => document.addEventListener('click', close), 0);
   }
 
   async function switchGroup(group) {
@@ -287,6 +430,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         groupIdDisplay.style.display = 'none';
         chatHeaderName.style.cursor = 'default';
         chatHeaderName.onclick = null;
+    }
+
+    document.querySelectorAll('.group-item, .friend-item').forEach(el => el.classList.remove('active'));
+    renderGroups();
+    renderFriends();
+
+    // Update local unread count for the switched group to 0
+    const gIndex = groups.findIndex(g => g.id === group.id);
+    if (gIndex !== -1) {
+        groups[gIndex].unreadCount = 0;
     }
 
     document.querySelectorAll('.group-item, .friend-item').forEach(el => el.classList.remove('active'));
@@ -383,6 +536,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     div.innerHTML = `
       <img src="${userInfo.avatar}" class="message-avatar" alt="Avatar">
       <div class="message-content">
+        ${msg.replyTo ? `<div class="reply-quote" style="border-left:3px solid var(--primary); padding-left:5px; margin-bottom:5px; opacity:0.8; font-size:0.85rem;">
+             <div style="font-weight:bold">${msg.replyTo.userDisplayName || 'User'}</div>
+             <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${msg.replyTo.text}</div>
+        </div>` : ''}
         <div class="message-header">
           <span style="font-weight:600">${userInfo.displayName}</span>
           <span>${time}</span>
@@ -400,8 +557,113 @@ document.addEventListener('DOMContentLoaded', async () => {
          div.querySelector('.message-content').title = "Read by: " + msg.readBy.join(', ');
     }
 
+    // Message Context Menu
+    div.querySelector('.message-content').addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showMessageContextMenu(e, msg, userInfo);
+    });
+
+    // Long press (Alternative for mobile/tablet)
+    let pressTimer;
+    div.querySelector('.message-content').addEventListener('mousedown', () => {
+        pressTimer = setTimeout(() => showMessageContextMenu(null, msg, userInfo), 800);
+    });
+    div.querySelector('.message-content').addEventListener('mouseup', () => clearTimeout(pressTimer));
+
     messagesContainer.appendChild(div);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  function showMessageContextMenu(e, msg, userInfo) {
+      if (contextMenu) document.body.removeChild(contextMenu);
+
+      contextMenu = document.createElement('div');
+      contextMenu.className = 'context-menu';
+      // Use event position or center if triggered by long press without event
+      const x = e ? e.pageX : (window.innerWidth / 2) - 75;
+      const y = e ? e.pageY : (window.innerHeight / 2) - 50;
+
+      contextMenu.style.position = 'absolute';
+      contextMenu.style.left = x + 'px';
+      contextMenu.style.top = y + 'px';
+      contextMenu.style.background = 'var(--card-bg)';
+      contextMenu.style.border = '1px solid var(--border-color)';
+      contextMenu.style.borderRadius = '8px';
+      contextMenu.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+      contextMenu.style.zIndex = '2000';
+      contextMenu.style.minWidth = '150px';
+
+      const createOption = (text, iconClass, onClick) => {
+          const div = document.createElement('div');
+          div.style.padding = '10px 15px';
+          div.style.cursor = 'pointer';
+          div.innerHTML = `<i class="${iconClass}"></i> ${text}`;
+          div.onmouseover = () => div.style.background = 'var(--bg-color)';
+          div.onmouseout = () => div.style.background = 'transparent';
+          div.onclick = () => {
+              document.body.removeChild(contextMenu);
+              contextMenu = null;
+              onClick();
+          };
+          return div;
+      };
+
+      // Reply
+      contextMenu.appendChild(createOption("Reply", "fas fa-reply", () => {
+          replyToMessage = { id: msg.id, text: msg.text, userDisplayName: userInfo.displayName };
+          document.getElementById('replyToUser').textContent = userInfo.displayName;
+          document.getElementById('replyToText').textContent = msg.text;
+          replyBanner.style.display = 'flex';
+          messageInput.focus();
+      }));
+
+      // Seen By (Only in groups)
+      if (currentGroup.type !== 'dm') {
+          contextMenu.appendChild(createOption("Seen by", "fas fa-eye", async () => {
+              // Show modal with readBy list
+              const readByList = msg.readBy || [];
+              let content = '';
+              if (readByList.length === 0) content = '<p>No one yet.</p>';
+              else {
+                  content = '<ul style="list-style:none; padding:0;">';
+                  for(const u of readByList) {
+                      const info = await getUserInfo(u);
+                      content += `<li style="padding:5px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:10px;">
+                        <img src="${info.avatar}" style="width:30px;height:30px;border-radius:50%">
+                        <span>${info.displayName}</span>
+                      </li>`;
+                  }
+                  content += '</ul>';
+              }
+
+              // Quick Alert for now or use a modal. Let's reuse info modal structure but dynamic?
+              // Let's create a simple overlay.
+              const overlay = document.createElement('div');
+              overlay.className = 'modal';
+              overlay.innerHTML = `
+                 <div class="modal-content">
+                    <div class="modal-header">
+                        <span>Seen By</span>
+                        <span class="close-modal" style="cursor:pointer">&times;</span>
+                    </div>
+                    <div style="max-height:300px; overflow-y:auto;">${content}</div>
+                 </div>
+              `;
+              document.body.appendChild(overlay);
+              overlay.querySelector('.close-modal').onclick = () => document.body.removeChild(overlay);
+          }));
+      }
+
+      document.body.appendChild(contextMenu);
+
+      const close = () => {
+          if (contextMenu && document.body.contains(contextMenu)) {
+              document.body.removeChild(contextMenu);
+              contextMenu = null;
+          }
+          document.removeEventListener('click', close);
+      };
+      setTimeout(() => document.addEventListener('click', close), 0);
   }
 
   function sendMessage() {
@@ -413,12 +675,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       type: 'message',
       groupId: currentGroup.id,
       text: text,
-      user: user.username
+      user: user.username,
+      replyTo: replyToMessage // Attach reply data
     };
 
     ws.send(JSON.stringify(payload));
     messageInput.value = '';
     messageInput.style.height = 'auto';
+
+    // Clear Reply
+    replyToMessage = null;
+    replyBanner.style.display = 'none';
   }
 
   // --- Logic: Group Info Modal ---
@@ -493,10 +760,92 @@ document.addEventListener('DOMContentLoaded', async () => {
                   actionsDiv.appendChild(btn);
               }
 
+              // Mute (Admin/Owner)
+              // Logic: Owner can mute anyone (except self). Admin can mute members (not other admins/owner).
+              const canMute = isOwner || (fullGroup.admins && fullGroup.admins.includes(user.username) && memberUsername !== fullGroup.owner && (!fullGroup.admins.includes(memberUsername) || isOwner));
+
+              if (canMute) {
+                  const btn = document.createElement('button');
+                  btn.className = 'btn btn-sm btn-warning';
+                  // Check if already muted
+                  const isMuted = fullGroup.muted && fullGroup.muted[memberUsername] && (fullGroup.muted[memberUsername] === -1 || fullGroup.muted[memberUsername] > Date.now());
+
+                  btn.textContent = isMuted ? 'Unmute' : 'Mute';
+                  btn.style.marginLeft = '5px';
+                  btn.onclick = () => {
+                      if (isMuted) unmuteMember(fullGroup.id, memberUsername);
+                      else openMuteModal(fullGroup.id, memberUsername);
+                  };
+                  actionsDiv.appendChild(btn);
+              }
+
               row.appendChild(actionsDiv);
           }
 
           list.appendChild(row);
+      }
+
+      // Add Member (If permission allows)
+      const isMember = fullGroup.members.includes(user.username);
+      const isAdmin = fullGroup.admins && fullGroup.admins.includes(user.username);
+      const invitePerm = fullGroup.invite_permission || 'admin';
+
+      let canInvite = false;
+      if (invitePerm === 'all' && isMember) canInvite = true;
+      if (invitePerm === 'admin' && (isAdmin || isOwner)) canInvite = true;
+
+      const addMemberBtn = document.getElementById('addMemberBtn'); // Needs to be added to HTML or created dynamically
+
+      // Since the HTML structure for addMemberBtn might not exist in modal footer, let's inject it into footer if owner/admin controls are there.
+      // Or just append to ownerControls if visible, or create a new section.
+      // Let's look for a place. There's 'ownerControls' div.
+
+      // Let's check if we have an add member button already in HTML or need to create.
+      // The provided HTML in memory/context doesn't show the modal HTML structure fully.
+      // Assuming we can add it to ownerControls or near it.
+
+      let inviteSection = document.getElementById('inviteSection');
+      if (!inviteSection) {
+          inviteSection = document.createElement('div');
+          inviteSection.id = 'inviteSection';
+          inviteSection.style.marginTop = '10px';
+          document.getElementById('ownerControls').parentNode.insertBefore(inviteSection, document.getElementById('ownerControls'));
+      }
+      inviteSection.innerHTML = '';
+
+      if (canInvite && fullGroup.type !== 'dm') {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-sm btn-primary';
+          btn.textContent = 'Add Member';
+          btn.onclick = () => openInviteModal(fullGroup);
+          inviteSection.appendChild(btn);
+      }
+
+      // Settings Toggle for Invite Permission (Owner Only)
+      if (isOwner && fullGroup.type !== 'dm') {
+          const toggleDiv = document.createElement('div');
+          toggleDiv.style.marginTop = '10px';
+          toggleDiv.innerHTML = `
+            <label class="switch-container">
+                <span>Allow all members to invite</span>
+                <input type="checkbox" id="invitePermToggle" ${invitePerm === 'all' ? 'checked' : ''}>
+                <span class="slider round"></span>
+            </label>
+          `;
+          // We need CSS for toggle switch to look "premium" as requested.
+          // Assuming CSS exists or we use standard checkbox for logic first.
+          // User asked for toggle switches.
+
+          inviteSection.appendChild(toggleDiv);
+
+          toggleDiv.querySelector('input').onchange = async (e) => {
+              const newPerm = e.target.checked ? 'all' : 'admin';
+              await fetch('/api/groups/settings', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ groupId: fullGroup.id, requester: user.username, invite_permission: newPerm })
+              });
+          };
       }
 
       // Bind Footer Actions
@@ -586,6 +935,103 @@ document.addEventListener('DOMContentLoaded', async () => {
       groupInfoModal.classList.add('hidden');
   });
 
+  // --- Logic: Invite & Mute Modals ---
+
+  function openInviteModal(group) {
+      // Create a simple modal dynamically
+      const overlay = document.createElement('div');
+      overlay.className = 'modal';
+      overlay.innerHTML = `
+         <div class="modal-content">
+            <div class="modal-header">
+                <span>Invite Friend to ${group.name}</span>
+                <span class="close-modal" style="cursor:pointer">&times;</span>
+            </div>
+            <div id="inviteFriendList" style="max-height:300px; overflow-y:auto;"></div>
+         </div>
+      `;
+
+      const list = overlay.querySelector('#inviteFriendList');
+
+      friends.forEach(f => {
+          // Filter already in group
+          if (group.members.includes(f.username)) return;
+
+          const div = document.createElement('div');
+          div.className = 'friend-item';
+          div.innerHTML = `
+            <img src="${f.avatar}" style="width:30px;height:30px;border-radius:50%">
+            <span>${f.displayName}</span>
+            <button class="btn btn-sm btn-primary" style="margin-left:auto">Add</button>
+          `;
+          div.querySelector('button').onclick = async () => {
+              const res = await fetch('/api/groups/invite', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ groupId: group.id, requester: user.username, target: f.username })
+              });
+              if (res.ok) {
+                  div.remove();
+                  alert('Invited!');
+                  // Update group info if open?
+                  openGroupInfo(group); // Refresh
+              } else {
+                  const d = await res.json();
+                  alert(d.error);
+              }
+          };
+          list.appendChild(div);
+      });
+
+      document.body.appendChild(overlay);
+      overlay.querySelector('.close-modal').onclick = () => document.body.removeChild(overlay);
+  }
+
+  function openMuteModal(groupId, target) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal';
+      overlay.innerHTML = `
+         <div class="modal-content">
+            <div class="modal-header">
+                <span>Mute ${target}</span>
+                <span class="close-modal" style="cursor:pointer">&times;</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <button class="btn btn-secondary" data-dur="60">1 Minute</button>
+                <button class="btn btn-secondary" data-dur="3600">1 Hour</button>
+                <button class="btn btn-secondary" data-dur="86400">1 Day</button>
+                <button class="btn btn-secondary" data-dur="315360000">10 Years (Permanent-ish)</button>
+                <button class="btn btn-danger" data-dur="-1">Permanent</button>
+            </div>
+         </div>
+      `;
+
+      overlay.querySelectorAll('button').forEach(btn => {
+          btn.onclick = async () => {
+              const duration = parseInt(btn.getAttribute('data-dur'));
+              await fetch('/api/groups/mute', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ groupId, requester: user.username, target, duration })
+              });
+              document.body.removeChild(overlay);
+              openGroupInfo({id: groupId});
+          };
+      });
+
+      document.body.appendChild(overlay);
+      overlay.querySelector('.close-modal').onclick = () => document.body.removeChild(overlay);
+  }
+
+  async function unmuteMember(groupId, target) {
+      await fetch('/api/groups/unmute', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ groupId, requester: user.username, target })
+      });
+      openGroupInfo({id: groupId});
+  }
+
 
   // --- Logic: Friends ---
 
@@ -595,6 +1041,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           const data = await res.json();
           friends = data.friends;
           friendRequests = data.friendRequests;
+
+          // Sort friends: Pinned DM groups first
+          friends.sort((a, b) => {
+              const dmA = groups.find(g => g.type === 'dm' && g.name === a.username);
+              const dmB = groups.find(g => g.type === 'dm' && g.name === b.username);
+              const aPinned = dmA && user.pinned_chats && user.pinned_chats.includes(dmA.id);
+              const bPinned = dmB && user.pinned_chats && user.pinned_chats.includes(dmB.id);
+
+              if (aPinned && !bPinned) return -1;
+              if (!aPinned && bPinned) return 1;
+              return a.displayName.localeCompare(b.displayName);
+          });
+
           renderFriends();
       } catch (e) { console.error(e); }
   }
@@ -631,14 +1090,131 @@ document.addEventListener('DOMContentLoaded', async () => {
       friends.forEach(friend => {
           const div = document.createElement('div');
 
+          // Check for unread count in matching DM group
+          const dmGroup = groups.find(g => g.type === 'dm' && g.name === friend.username);
+          let badge = '';
+          if (dmGroup && dmGroup.unreadCount > 0) {
+              badge = `<span style="background:red; color:white; border-radius:50%; padding:2px 6px; font-size:0.7rem; margin-left:auto;">${dmGroup.unreadCount}</span>`;
+          }
+
           div.className = `friend-item`;
+
+          let pinIcon = '';
+          if (dmGroup && user.pinned_chats && user.pinned_chats.includes(dmGroup.id)) {
+              pinIcon = '<i class="fas fa-thumbtack" style="color:var(--primary); margin-right:5px; font-size:0.8rem;"></i>';
+          }
+
           div.innerHTML = `
+            ${pinIcon}
             <img src="${friend.avatar}" style="width:30px;height:30px;border-radius:50%">
             <span>${friend.displayName}</span>
+            ${badge}
           `;
           div.onclick = () => startDM(friend);
+
+          // Context Menu for Friend
+          div.addEventListener('contextmenu', (e) => {
+              e.preventDefault();
+              showFriendContextMenu(e, friend);
+          });
+
           friendsContainer.appendChild(div);
       });
+  }
+
+  function showFriendContextMenu(e, friend) {
+      if (contextMenu) document.body.removeChild(contextMenu);
+
+      contextMenu = document.createElement('div');
+      contextMenu.className = 'context-menu';
+      contextMenu.style.position = 'absolute';
+      contextMenu.style.left = e.pageX + 'px';
+      contextMenu.style.top = e.pageY + 'px';
+      contextMenu.style.background = 'var(--card-bg)';
+      contextMenu.style.border = '1px solid var(--border-color)';
+      contextMenu.style.borderRadius = '8px';
+      contextMenu.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+      contextMenu.style.zIndex = '2000';
+      contextMenu.style.minWidth = '150px';
+      contextMenu.style.overflow = 'hidden';
+
+      const createOption = (text, iconClass, onClick, isDanger = false) => {
+          const div = document.createElement('div');
+          div.style.padding = '10px 15px';
+          div.style.cursor = 'pointer';
+          div.style.display = 'flex';
+          div.style.alignItems = 'center';
+          div.style.gap = '10px';
+          if (isDanger) div.style.color = '#ff4444';
+          div.innerHTML = `<i class="${iconClass}"></i> ${text}`;
+          div.onmouseover = () => div.style.background = 'var(--bg-color)';
+          div.onmouseout = () => div.style.background = 'transparent';
+          div.onclick = () => {
+              document.body.removeChild(contextMenu);
+              contextMenu = null;
+              onClick();
+          };
+          return div;
+      };
+
+      // Pin Option (Pins the DM Group)
+      // Find DM Group first
+      const dmGroup = groups.find(g => g.type === 'dm' && g.name === friend.username);
+      if (dmGroup) {
+          const isPinned = user.pinned_chats && user.pinned_chats.includes(dmGroup.id);
+          contextMenu.appendChild(createOption(isPinned ? "Unpin" : "Pin", "fas fa-thumbtack", async () => {
+              const res = await fetch('/api/user/pin', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ username: user.username, groupId: dmGroup.id, action: isPinned ? 'unpin' : 'pin' })
+              });
+              if (res.ok) {
+                  const data = await res.json();
+                  if (data.error) alert(data.error);
+                  else {
+                      user.pinned_chats = data.pinned_chats;
+                      await loadGroups();
+                      // renderFriends(); // Re-render friends? Pins usually affect order?
+                      // User said "pin friends.. appear at top".
+                      // If we pin a friend, should they move to top of friend list?
+                      // Probably.
+                      // Let's sort friends too?
+                      // But friends list is usually alphabetical.
+                      // Let's assume standard behavior: Pinned items go to top.
+                      // We need to update loadFriends/renderFriends to sort by pin.
+                      loadFriends();
+                  }
+              }
+          }));
+      }
+
+      // View Info
+      contextMenu.appendChild(createOption("View Profile", "fas fa-user", () => {
+          alert(`Username: ${friend.username}\nDisplay Name: ${friend.displayName}`);
+      }));
+
+      // Unfriend
+      contextMenu.appendChild(createOption("Unfriend", "fas fa-user-minus", async () => {
+          if(confirm(`Unfriend ${friend.displayName}?`)) {
+              await fetch('/api/friends/remove', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ user: user.username, target: friend.username })
+              });
+              await loadFriends();
+          }
+      }, true));
+
+      document.body.appendChild(contextMenu);
+
+      const close = () => {
+          if (contextMenu && document.body.contains(contextMenu)) {
+              document.body.removeChild(contextMenu);
+              contextMenu = null;
+          }
+          document.removeEventListener('click', close);
+      };
+      setTimeout(() => document.addEventListener('click', close), 0);
   }
 
   // Expose for inline onclick
