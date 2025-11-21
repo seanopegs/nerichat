@@ -45,6 +45,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const friendRequestsContainer = document.getElementById('friendRequestsContainer');
   const friendsContainer = document.getElementById('friendsContainer');
 
+  const groupInfoModal = document.getElementById('groupInfoModal');
+  const closeInfoModal = document.querySelector('.close-modal-info');
+
   // --- Initialization ---
 
   // Apply Theme
@@ -89,20 +92,37 @@ document.addEventListener('DOMContentLoaded', async () => {
                user: user.username
            }));
            await appendMessage(data.message);
+        } else {
+            // Just mark as received if we are online but not viewing group
+            ws.send(JSON.stringify({
+               type: 'received_message',
+               groupId: data.groupId,
+               user: user.username,
+               messageId: data.message.id
+           }));
         }
       } else if (data.type === 'read_update') {
-          // Update ticks if we are viewing
           if (currentGroup && data.groupId === currentGroup.id) {
-              // In a real optimized app, we update specific message.
-              // Here we just re-render or update DOM elements that match.
-              // For simplicity, let's just find messages not marked read and mark them.
-              const ticks = document.querySelectorAll(`.message.me .read-receipt:not(.read)`);
-              ticks.forEach(tick => {
-                  // Check if this user is the one who read it (data.user)
-                  // If data.readBy is the user, we can show blue tick.
-                  tick.classList.add('read');
-                  tick.innerHTML = '<i class="fas fa-check-double"></i>';
-              });
+             updateReadReceipts(data.user);
+          }
+      } else if (data.type === 'delivery_update') {
+          if (currentGroup && data.groupId === currentGroup.id) {
+             updateDeliveryReceipts(data.user);
+          }
+      } else if (data.type === 'group_deleted') {
+          if (currentGroup && currentGroup.id === data.groupId) {
+              alert('This group has been deleted by the owner.');
+              window.location.reload();
+          } else {
+              await loadGroups();
+          }
+      } else if (data.type === 'group_id_changed') {
+          if (currentGroup && currentGroup.id === data.oldId) {
+              alert('Group ID has been reset. Reloading...');
+              // Just switch to new group logic effectively
+              window.location.reload();
+          } else {
+              await loadGroups();
           }
       }
     });
@@ -110,6 +130,85 @@ document.addEventListener('DOMContentLoaded', async () => {
     ws.addEventListener('close', () => {
       setTimeout(setupWebSocket, 3000);
     });
+  }
+
+  function updateReadReceipts(readByUser) {
+      // Simplistic update: find all double ticks and turn blue if criteria met
+      // Actually we need to re-check logic for each message.
+      // But since we don't have full message state in DOM, we might need to just turn all "delivered" into "read" if we assume sequentially?
+      // Better: Just re-render visible messages or specific update.
+      // Let's do a quick DOM update for own messages.
+
+      const msgs = document.querySelectorAll('.message.me');
+      msgs.forEach(div => {
+          const tick = div.querySelector('.read-receipt');
+          if (tick && !tick.classList.contains('read')) {
+              // If we don't have the msg object, we can't check list.
+              // But `read_update` event usually means *someone* read it.
+              // If it's a DM, that's enough.
+              // If Group, we need to know if *everyone* read it.
+              // This is hard without local state of messages.
+              // Let's fetch messages again to be accurate or just assume "Blue" if *someone* read in DM.
+              if (currentGroup.type === 'dm') {
+                   tick.classList.add('read');
+                   tick.innerHTML = '<i class="fas fa-check-double"></i>'; // Blue
+              } else {
+                  // In group, re-fetch might be heavy.
+                  // Let's just keep it gray until reload unless we track state.
+                  // User said "like whatsapp" -> Needs to be accurate.
+                  // Let's re-fetch the specific message? No API for that.
+                  // Let's fetch group messages again silently?
+                  // Or simpler: Add data-read-by attribute to DOM
+                  let readBy = div.getAttribute('data-read-by') ? JSON.parse(div.getAttribute('data-read-by')) : [];
+                  if (!readBy.includes(readByUser)) readBy.push(readByUser);
+                  div.setAttribute('data-read-by', JSON.stringify(readBy));
+
+                  // Check count
+                  // We need total members count.
+                  // currentGroup.members count.
+                  // If readBy.length >= currentGroup.members.length (minus 1 for sender? actually list includes sender)
+                  // Let's rely on re-rendering for accuracy or simple reload.
+                  // Let's Try to update visual based on local calc.
+
+                  // NOTE: currentGroup.members might be just IDs. We need count.
+                  if (readBy.length >= currentGroup.members.length) {
+                       tick.classList.add('read'); // Blue
+                       tick.innerHTML = '<i class="fas fa-check-double"></i>';
+                  }
+              }
+          }
+      });
+  }
+
+  function updateDeliveryReceipts(receivedByUser) {
+      const msgs = document.querySelectorAll('.message.me');
+      msgs.forEach(div => {
+          const tick = div.querySelector('.read-receipt');
+          if (tick && !tick.classList.contains('read')) { // Only if not already blue
+               // Check if single tick, make double gray
+               const icon = tick.querySelector('i');
+               if (icon && icon.classList.contains('fa-check') && !icon.classList.contains('fa-check-double')) {
+                   // It was single check
+                   // Now update received list
+                   let receivedBy = div.getAttribute('data-received-by') ? JSON.parse(div.getAttribute('data-received-by')) : [];
+                   if (!receivedByUser) return;
+                   if (!receivedBy.includes(receivedByUser)) receivedBy.push(receivedByUser);
+                   div.setAttribute('data-received-by', JSON.stringify(receivedBy));
+
+                   // Logic: If DM, 1 other person received -> Double tick
+                   // If Group, if *everyone* received? Or *anyone*?
+                   // User said "2 centang = orgnya udh nerima".
+                   // Usually in groups, 2 ticks = Delivered to all.
+                   if (currentGroup.type === 'dm') {
+                       tick.innerHTML = '<i class="fas fa-check-double"></i>';
+                   } else {
+                       if (receivedBy.length >= currentGroup.members.length) {
+                           tick.innerHTML = '<i class="fas fa-check-double"></i>';
+                       }
+                   }
+               }
+          }
+      });
   }
 
   // --- Logic: Users ---
@@ -153,47 +252,62 @@ document.addEventListener('DOMContentLoaded', async () => {
     groupsList.innerHTML = '';
     groups.forEach(group => {
       // Filter based on tab? No, "Groups" tab shows groups.
-      if (group.type === 'dm') return; // DMs go to Friends/DM list?
-      // Actually user asked for "add friend... then chat".
-      // Usually DMs are listed separate or mixed.
-      // Let's put normal groups in Groups tab.
+      if (group.type === 'dm') return;
 
       const div = document.createElement('div');
       div.className = `group-item ${currentGroup && currentGroup.id === group.id ? 'active' : ''}`;
       div.innerHTML = `<i class="fas fa-hashtag"></i> ${group.name}`;
       div.onclick = () => switchGroup(group);
+      // Add Right Click / Double Click for Settings
+      div.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          openGroupInfo(group);
+      });
+      div.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          openGroupInfo(group);
+      });
+
       groupsList.appendChild(div);
     });
   }
 
   async function switchGroup(group) {
     currentGroup = group;
-    chatHeaderName.textContent = group.type === 'dm' ? group.name : `# ${group.name}`; // For DM, name is friend's name
+    chatHeaderName.textContent = group.type === 'dm' ? group.name : `# ${group.name}`;
 
-    // Show Group ID only if normal group
     if (group.type === 'group') {
         groupIdText.textContent = group.id;
         groupIdDisplay.style.display = 'inline-block';
+
+        // Settings Click on Header
+        chatHeaderName.style.cursor = 'pointer';
+        chatHeaderName.onclick = () => openGroupInfo(group);
     } else {
         groupIdDisplay.style.display = 'none';
+        chatHeaderName.style.cursor = 'default';
+        chatHeaderName.onclick = null;
     }
 
-    // Update active class in lists
     document.querySelectorAll('.group-item, .friend-item').forEach(el => el.classList.remove('active'));
-    // This is tricky without ID references in DOM, but re-render handles it mostly.
     renderGroups();
-    renderFriends(); // To highlight if it's a DM
+    renderFriends();
 
     // Load messages
     messagesContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted)">Loading...</div>';
     try {
       const res = await fetch(`/api/groups/${group.id}`);
       const data = await res.json();
+
+      // Update full group object with details (members, owner, etc)
+      currentGroup = data;
+
       messagesContainer.innerHTML = '';
       if (data.messages) {
         for (const msg of data.messages) {
             await appendMessage(msg);
         }
+
         // Send read receipt
         ws.send(JSON.stringify({
             type: 'read_message',
@@ -207,22 +321,64 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function appendMessage(msg) {
+    if (msg.type === 'system') {
+        const div = document.createElement('div');
+        div.className = 'message system-message';
+        div.innerHTML = `<small style="color:var(--text-muted); display:block; text-align:center; margin: 10px 0;">${msg.text}</small>`;
+        messagesContainer.appendChild(div);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        return;
+    }
+
     const isMe = msg.user === user.username;
     const div = document.createElement('div');
     div.className = `message ${isMe ? 'me' : ''}`;
 
+    // Store read/received state for live updates
+    div.setAttribute('data-read-by', JSON.stringify(msg.readBy || []));
+    div.setAttribute('data-received-by', JSON.stringify(msg.receivedBy || []));
+
     const userInfo = await getUserInfo(msg.user);
     const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Check read status
-    // If I am viewing, I just read it (handled by ws send).
-    // If looking at past messages:
-    // A message is read if readBy contains someone ELSE than the sender?
-    // User wants: 1 tick = delivered (server saved), 1 blue tick = read.
-    // If msg.readBy has > 1 person (sender is always in it), it's read.
-    const isRead = msg.readBy && msg.readBy.length > 1;
-    const tickIcon = isRead ? '<i class="fas fa-check-double"></i>' : '<i class="fas fa-check"></i>';
-    const tickClass = isRead ? 'read' : '';
+    // Ticks Logic
+    // Only for me
+    let tickHtml = '';
+    let tickClass = '';
+
+    if (isMe) {
+        const readCount = (msg.readBy || []).length;
+        const receivedCount = (msg.receivedBy || []).length;
+        const memberCount = currentGroup.members.length; // Total members in group
+
+        // Logic for ticks
+        // 1 Tick: Delivered to server (Always true if we are here)
+        // 2 Gray Ticks: Delivered to all (receivedCount >= memberCount)
+        // 2 Blue Ticks: Read by all (readCount >= memberCount)
+
+        // Note: msg.readBy includes sender usually.
+
+        let isRead = readCount >= memberCount;
+        let isReceived = receivedCount >= memberCount;
+
+        if (currentGroup.type === 'dm') {
+            // For DM, memberCount is 2.
+            // If other person is in readBy, it's read.
+            // If other person is in receivedBy, it's received.
+            // We can check if length > 1
+             isRead = readCount > 1;
+             isReceived = receivedCount > 1;
+        }
+
+        if (isRead) {
+            tickHtml = '<i class="fas fa-check-double"></i>';
+            tickClass = 'read'; // Blue
+        } else if (isReceived) {
+            tickHtml = '<i class="fas fa-check-double"></i>'; // Gray
+        } else {
+            tickHtml = '<i class="fas fa-check"></i>'; // Gray single
+        }
+    }
 
     div.innerHTML = `
       <img src="${userInfo.avatar}" class="message-avatar" alt="Avatar">
@@ -233,14 +389,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
         <div class="message-text"></div>
         <div class="message-footer">
-           <span class="read-receipt ${tickClass}">${tickIcon}</span>
+           ${isMe ? `<span class="read-receipt ${tickClass}">${tickHtml}</span>` : ''}
         </div>
       </div>
     `;
     div.querySelector('.message-text').textContent = msg.text;
 
-    // Right click context menu for read info (Simplified: just title for now)
-    if (msg.readBy && msg.readBy.length > 0) {
+    // Tooltip
+    if (isMe && msg.readBy && msg.readBy.length > 0) {
          div.querySelector('.message-content').title = "Read by: " + msg.readBy.join(', ');
     }
 
@@ -262,9 +418,174 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     ws.send(JSON.stringify(payload));
     messageInput.value = '';
-    // Resize textarea reset
     messageInput.style.height = 'auto';
   }
+
+  // --- Logic: Group Info Modal ---
+
+  async function openGroupInfo(group) {
+      // Fetch latest group data to ensure members list is up to date
+      const res = await fetch(`/api/groups/${group.id}`);
+      if (!res.ok) return;
+      const fullGroup = await res.json();
+
+      document.getElementById('infoGroupName').textContent = fullGroup.name;
+      document.getElementById('infoGroupId').textContent = fullGroup.id;
+      document.getElementById('infoGroupAvatar').src = fullGroup.avatar || `https://ui-avatars.com/api/?name=${fullGroup.name}`;
+
+      const isOwner = fullGroup.owner === user.username;
+      const ownerControls = document.getElementById('ownerControls');
+
+      if (isOwner && fullGroup.type !== 'dm') {
+          ownerControls.classList.remove('hidden');
+      } else {
+          ownerControls.classList.add('hidden');
+      }
+
+      const list = document.getElementById('groupMembersList');
+      list.innerHTML = '';
+
+      for (const memberUsername of fullGroup.members) {
+          const u = await getUserInfo(memberUsername);
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.alignItems = 'center';
+          row.style.padding = '10px 0';
+          row.style.borderBottom = '1px solid #eee';
+
+          let roleTag = '';
+          if (fullGroup.owner === memberUsername) roleTag = '<span style="background:#ffd700; padding:2px 5px; font-size:0.7rem; border-radius:4px; margin-left:5px;">Owner</span>';
+          else if (fullGroup.admins && fullGroup.admins.includes(memberUsername)) roleTag = '<span style="background:#ccc; padding:2px 5px; font-size:0.7rem; border-radius:4px; margin-left:5px;">Admin</span>';
+
+          row.innerHTML = `
+            <img src="${u.avatar}" style="width:40px;height:40px;border-radius:50%;margin-right:10px;">
+            <div style="flex:1">
+                <div><strong>${u.displayName}</strong> ${roleTag}</div>
+                <div style="font-size:0.8rem;color:gray">@${u.username}</div>
+            </div>
+          `;
+
+          // Context Menu for actions
+          if (memberUsername !== user.username && fullGroup.type !== 'dm') {
+              // Actions: Kick, Promote/Demote
+              const actionsDiv = document.createElement('div');
+
+              // Kick logic
+              const canKick = isOwner || (fullGroup.admins && fullGroup.admins.includes(user.username) && memberUsername !== fullGroup.owner && (!fullGroup.admins.includes(memberUsername) || isOwner));
+
+              if (canKick) {
+                  const btn = document.createElement('button');
+                  btn.className = 'btn btn-sm btn-danger';
+                  btn.textContent = 'Kick';
+                  btn.style.marginLeft = '5px';
+                  btn.onclick = () => kickMember(fullGroup.id, memberUsername);
+                  actionsDiv.appendChild(btn);
+              }
+
+              // Promote/Demote
+              if (isOwner) {
+                  const isAdmin = fullGroup.admins && fullGroup.admins.includes(memberUsername);
+                  const btn = document.createElement('button');
+                  btn.className = 'btn btn-sm btn-secondary';
+                  btn.textContent = isAdmin ? 'Demote' : 'Promote';
+                  btn.style.marginLeft = '5px';
+                  btn.onclick = () => toggleAdmin(fullGroup.id, memberUsername, !isAdmin);
+                  actionsDiv.appendChild(btn);
+              }
+
+              row.appendChild(actionsDiv);
+          }
+
+          list.appendChild(row);
+      }
+
+      // Bind Footer Actions
+      document.getElementById('leaveGroupBtn').onclick = () => leaveGroup(fullGroup.id);
+
+      if (isOwner) {
+        document.getElementById('deleteGroupBtn').onclick = () => deleteGroup(fullGroup.id);
+        document.getElementById('resetGroupIdBtn').onclick = () => resetGroupId(fullGroup.id);
+        document.getElementById('saveGroupSettingsBtn').onclick = () => updateGroupSettings(fullGroup.id);
+      }
+
+      groupInfoModal.classList.remove('hidden');
+  }
+
+  async function kickMember(groupId, target) {
+      if(!confirm(`Kick ${target}?`)) return;
+      await fetch('/api/groups/kick', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ groupId, requester: user.username, target })
+      });
+      // Refresh info
+      openGroupInfo({id: groupId});
+  }
+
+  async function toggleAdmin(groupId, target, makeAdmin) {
+      const endpoint = makeAdmin ? '/api/groups/promote' : '/api/groups/demote';
+      await fetch(endpoint, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ groupId, requester: user.username, target })
+      });
+      openGroupInfo({id: groupId});
+  }
+
+  async function leaveGroup(groupId) {
+      if(!confirm('Leave this group?')) return;
+      await fetch('/api/groups/leave', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ groupId, username: user.username })
+      });
+      groupInfoModal.classList.add('hidden');
+      window.location.reload();
+  }
+
+  async function deleteGroup(groupId) {
+      if(!confirm('Delete this group entirely? This cannot be undone.')) return;
+      await fetch('/api/groups/delete', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ groupId, requester: user.username })
+      });
+      groupInfoModal.classList.add('hidden');
+      window.location.reload();
+  }
+
+  async function resetGroupId(groupId) {
+      if(!confirm('Reset Group ID? The old ID will become invalid.')) return;
+      const res = await fetch('/api/groups/reset-id', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ groupId, requester: user.username })
+      });
+      const data = await res.json();
+      if (data.success) {
+          alert('Group ID Reset. New ID: ' + data.newId);
+          groupInfoModal.classList.add('hidden');
+          // Reload to reflect? The socket will handle it too.
+      }
+  }
+
+  async function updateGroupSettings(groupId) {
+      const avatar = document.getElementById('editGroupAvatarInput').value;
+      if (avatar) {
+          await fetch('/api/groups/settings', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ groupId, requester: user.username, avatar })
+          });
+          // Refresh
+           openGroupInfo({id: groupId});
+      }
+  }
+
+  closeInfoModal.addEventListener('click', () => {
+      groupInfoModal.classList.add('hidden');
+  });
+
 
   // --- Logic: Friends ---
 
@@ -309,9 +630,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       friends.forEach(friend => {
           const div = document.createElement('div');
-          // Check if this friend DM is active
-          const isDmActive = currentGroup && currentGroup.type === 'dm' && currentGroup.name === friend.displayName; // name logic is slightly loose
-          // Better: Check ID if we mapped it. For now, just list.
 
           div.className = `friend-item`;
           div.innerHTML = `
@@ -343,14 +661,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                   creator: user.username,
                   members: [friend.username],
                   type: 'dm',
-                  name: "DM" // Name ignored by server logic for DMs usually, or used as placeholder
+                  name: "DM"
               })
           });
           const data = await res.json();
           if (data.success) {
               // We manually set the name for display purpose
               data.group.name = friend.displayName;
-              await loadGroups(); // Refresh groups to ensure it exists in list (though we filter it out of groups tab)
+              await loadGroups();
               switchGroup(data.group);
           }
       } catch (e) { console.error(e); }
@@ -366,11 +684,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             sendMessage();
         }
-        // Shift+Enter allows default behavior (new line)
     }
   });
 
-  // Auto-resize textarea
   messageInput.addEventListener('input', function() {
       this.style.height = 'auto';
       this.style.height = (this.scrollHeight) + 'px';

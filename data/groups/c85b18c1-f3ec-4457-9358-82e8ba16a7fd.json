@@ -1,0 +1,50 @@
+{
+  "id": "c85b18c1-f3ec-4457-9358-82e8ba16a7fd",
+  "name": "Test Group",
+  "type": "group",
+  "members": [
+    "userA",
+    "userB"
+  ],
+  "messages": [
+    {
+      "id": "dce01746-f115-4a00-a1b4-ac19e63cfab5",
+      "type": "system",
+      "text": "userB joined the group",
+      "timestamp": 1763683471805,
+      "readBy": [],
+      "receivedBy": []
+    },
+    {
+      "id": "ec48b377-eee1-4935-bd66-46bbd428f5dc",
+      "user": "userA",
+      "text": "Hello from Owner",
+      "timestamp": 1763683472605,
+      "readBy": [
+        "userA",
+        "userB"
+      ],
+      "receivedBy": [
+        "userA",
+        "userB"
+      ]
+    },
+    {
+      "id": "3feeb961-7334-4d73-b94e-d9bb8d901129",
+      "user": "userB",
+      "text": "Hello Owner",
+      "timestamp": 1763683474807,
+      "readBy": [
+        "userB",
+        "userA"
+      ],
+      "receivedBy": [
+        "userB",
+        "userA"
+      ]
+    }
+  ],
+  "owner": "userA",
+  "admins": [],
+  "avatar": "https://ui-avatars.com/api/?name=Test%20Group"
+}

@@ -53,6 +53,36 @@ function writeJSON(filepath, data) {
   }
 }
 
+function broadcastToGroup(group, data) {
+  const msgString = JSON.stringify(data);
+  group.members.forEach(member => {
+    const memberWs = clients.get(member);
+    if (memberWs && memberWs.readyState === WebSocket.OPEN) {
+      memberWs.send(msgString);
+    }
+  });
+}
+
+function createSystemMessage(group, text) {
+    const msgObj = {
+        id: crypto.randomUUID(),
+        type: "system",
+        text: text,
+        timestamp: Date.now(),
+        readBy: [],
+        receivedBy: []
+    };
+    group.messages.push(msgObj);
+
+    writeJSON(getGroupFilePath(group.id), group);
+
+    broadcastToGroup(group, {
+        type: "new_message",
+        groupId: group.id,
+        message: msgObj
+    });
+}
+
 // --- API Routes ---
 
 // Register
@@ -63,7 +93,6 @@ app.post("/api/register", (req, res) => {
     return res.status(400).json({ error: "Username and password required" });
   }
 
-  // Sanitize username (alphanumeric + underscores only)
   if (!/^[a-zA-Z0-9_]+$/.test(username)) {
     return res.status(400).json({ error: "Username must be alphanumeric" });
   }
@@ -75,7 +104,7 @@ app.post("/api/register", (req, res) => {
 
   const newUser = {
     username,
-    password, // In a real app, hash this!
+    password,
     displayName: displayName || username,
     avatar: "https://ui-avatars.com/api/?name=" + encodeURIComponent(displayName || username),
     theme: "light",
@@ -120,19 +149,14 @@ app.get("/api/user/:username", (req, res) => {
   const user = readJSON(getUserFilePath(username));
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  // Don't send password
   const { password, ...safeUser } = user;
   res.json(safeUser);
 });
 
-// Search Users (for adding friends)
+// Search Users
 app.get("/api/users/search", (req, res) => {
   const { query } = req.query;
   if (!query) return res.json({ users: [] });
-
-  // NOTE: In a real DB this would be efficient. Here we scan files. Not scalable but fits requirement.
-  // We'll just check if a user with that exact username exists for now.
-  // Or we can list all files if not too many. Let's exact match for now.
 
   const user = readJSON(getUserFilePath(query));
   if (user) {
@@ -152,7 +176,6 @@ app.post("/api/user/settings", (req, res) => {
 
   if (displayName) user.displayName = displayName;
 
-  // Avatar logic: if empty string passed, reset to default
   if (avatar !== undefined) {
      if (avatar === "") {
         user.avatar = "https://ui-avatars.com/api/?name=" + encodeURIComponent(user.displayName);
@@ -177,7 +200,6 @@ app.get("/api/friends", (req, res) => {
     const user = readJSON(getUserFilePath(username));
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    // Populate friends details
     const friendsData = (user.friends || []).map(fUsername => {
         const fUser = readJSON(getUserFilePath(fUsername));
         if (!fUser) return { username: fUsername, displayName: fUsername };
@@ -199,14 +221,11 @@ app.post("/api/friends/request", (req, res) => {
 
     if (!fromUser || !toUser) return res.status(404).json({ error: "User not found" });
 
-    // Initialize arrays if missing
     if (!toUser.friendRequests) toUser.friendRequests = [];
     if (!toUser.friends) toUser.friends = [];
     if (!fromUser.friends) fromUser.friends = [];
 
-    // Check if already friends
     if (toUser.friends.includes(from)) return res.status(400).json({ error: "Already friends" });
-    // Check if already requested
     if (toUser.friendRequests.find(r => r.from === from)) return res.status(400).json({ error: "Request already sent" });
 
     toUser.friendRequests.push({ from, timestamp: Date.now() });
@@ -216,7 +235,7 @@ app.post("/api/friends/request", (req, res) => {
 });
 
 app.post("/api/friends/respond", (req, res) => {
-    const { user, from, action } = req.body; // user = who is responding (me), from = who sent request
+    const { user, from, action } = req.body;
     const myUserPath = getUserFilePath(user);
     const myUser = readJSON(myUserPath);
     const otherUserPath = getUserFilePath(from);
@@ -224,7 +243,6 @@ app.post("/api/friends/respond", (req, res) => {
 
     if (!myUser || !otherUser) return res.status(404).json({ error: "User not found" });
 
-    // Remove request
     if (!myUser.friendRequests) myUser.friendRequests = [];
     myUser.friendRequests = myUser.friendRequests.filter(r => r.from !== from);
 
@@ -260,14 +278,14 @@ app.post("/api/friends/remove", (req, res) => {
     res.json({ success: true });
 });
 
-// Create Group / Start DM
+// --- Group Routes ---
+
+// Create Group
 app.post("/api/groups", (req, res) => {
-  const { name, creator, members, type } = req.body; // members is optional array of usernames, type='dm' or 'group'
+  const { name, creator, members, type } = req.body;
   if (!creator) return res.status(400).json({ error: "Creator required" });
 
-  // For DM: Check if exists
   if (type === 'dm' && members && members.length === 1) {
-      // Search for existing DM between creator and members[0]
       const other = members[0];
       const user = readJSON(getUserFilePath(creator));
       if (user && user.groups) {
@@ -288,13 +306,15 @@ app.post("/api/groups", (req, res) => {
     id: groupId,
     name: name || "Group",
     type: type || "group",
-    members: [...new Set(initialMembers)], // unique
-    messages: []
+    members: [...new Set(initialMembers)],
+    messages: [],
+    owner: creator,
+    admins: [],
+    avatar: "https://ui-avatars.com/api/?name=" + encodeURIComponent(name || "Group")
   };
 
   writeJSON(getGroupFilePath(groupId), newGroup);
 
-  // Update all members
   newGroup.members.forEach(m => {
       const uPath = getUserFilePath(m);
       const u = readJSON(uPath);
@@ -322,7 +342,7 @@ app.post("/api/groups/join", (req, res) => {
 
   if (!group.members.includes(username)) {
     group.members.push(username);
-    writeJSON(groupPath, group);
+    createSystemMessage(group, `${username} joined the group`);
   }
 
   if (!user.groups.includes(groupId)) {
@@ -332,6 +352,210 @@ app.post("/api/groups/join", (req, res) => {
 
   res.json({ success: true, group });
 });
+
+// Leave Group
+app.post("/api/groups/leave", (req, res) => {
+    const { groupId, username } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+    const userPath = getUserFilePath(username);
+    const user = readJSON(userPath);
+
+    if (!group || !user) return res.status(404).json({ error: "Group or user not found" });
+
+    if (group.members.includes(username)) {
+        group.members = group.members.filter(m => m !== username);
+        if (group.admins) {
+            group.admins = group.admins.filter(a => a !== username);
+        }
+
+        createSystemMessage(group, `${username} left the group`);
+    }
+
+    if (user.groups.includes(groupId)) {
+        user.groups = user.groups.filter(g => g !== groupId);
+        writeJSON(userPath, user);
+    }
+
+    res.json({ success: true });
+});
+
+// Kick Member
+app.post("/api/groups/kick", (req, res) => {
+    const { groupId, requester, target } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    const isOwner = group.owner === requester;
+    const isAdmin = group.admins && group.admins.includes(requester);
+
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: "Permission denied" });
+
+    if (target === group.owner) return res.status(403).json({ error: "Cannot kick owner" });
+
+    if (isAdmin && !isOwner && group.admins.includes(target)) {
+        return res.status(403).json({ error: "Admins cannot kick other admins" });
+    }
+
+    group.members = group.members.filter(m => m !== target);
+    if (group.admins) group.admins = group.admins.filter(a => a !== target);
+
+    createSystemMessage(group, `${target} was kicked by ${requester}`);
+
+    const targetPath = getUserFilePath(target);
+    const targetUser = readJSON(targetPath);
+    if (targetUser && targetUser.groups) {
+        targetUser.groups = targetUser.groups.filter(g => g !== groupId);
+        writeJSON(targetPath, targetUser);
+    }
+
+    res.json({ success: true });
+});
+
+// Promote to Admin
+app.post("/api/groups/promote", (req, res) => {
+    const { groupId, requester, target } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    if (group.owner !== requester) return res.status(403).json({ error: "Only owner can promote" });
+
+    if (!group.admins) group.admins = [];
+    if (!group.admins.includes(target) && group.members.includes(target)) {
+        group.admins.push(target);
+        writeJSON(groupPath, group);
+        createSystemMessage(group, `${target} is now an Admin`);
+    }
+
+    res.json({ success: true });
+});
+
+// Demote from Admin
+app.post("/api/groups/demote", (req, res) => {
+    const { groupId, requester, target } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    if (group.owner !== requester) return res.status(403).json({ error: "Only owner can demote" });
+
+    if (group.admins && group.admins.includes(target)) {
+        group.admins = group.admins.filter(a => a !== target);
+        writeJSON(groupPath, group);
+        createSystemMessage(group, `${target} is no longer an Admin`);
+    }
+
+    res.json({ success: true });
+});
+
+// Delete Group
+app.post("/api/groups/delete", (req, res) => {
+    const { groupId, requester } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    if (group.owner !== requester) return res.status(403).json({ error: "Only owner can delete group" });
+
+    group.members.forEach(m => {
+        const uPath = getUserFilePath(m);
+        const u = readJSON(uPath);
+        if (u && u.groups) {
+            u.groups = u.groups.filter(g => g !== groupId);
+            writeJSON(uPath, u);
+        }
+    });
+
+    fs.unlinkSync(groupPath);
+
+    const broadcastData = JSON.stringify({
+        type: "group_deleted",
+        groupId
+    });
+
+    group.members.forEach(member => {
+        const memberWs = clients.get(member);
+        if (memberWs && memberWs.readyState === WebSocket.OPEN) {
+            memberWs.send(broadcastData);
+        }
+    });
+
+    res.json({ success: true });
+});
+
+// Reset Group ID
+app.post("/api/groups/reset-id", (req, res) => {
+    const { groupId, requester } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    if (group.owner !== requester) return res.status(403).json({ error: "Only owner can reset ID" });
+
+    const newId = crypto.randomUUID();
+    const newGroupPath = getGroupFilePath(newId);
+
+    group.id = newId;
+
+    if (writeJSON(newGroupPath, group)) {
+        fs.unlinkSync(groupPath);
+
+        group.members.forEach(m => {
+            const uPath = getUserFilePath(m);
+            const u = readJSON(uPath);
+            if (u && u.groups) {
+                const idx = u.groups.indexOf(groupId);
+                if (idx !== -1) {
+                    u.groups[idx] = newId;
+                    writeJSON(uPath, u);
+                }
+            }
+        });
+
+        const broadcastData = JSON.stringify({
+            type: "group_id_changed",
+            oldId: groupId,
+            newId: newId,
+            group: group
+        });
+
+        group.members.forEach(member => {
+            const memberWs = clients.get(member);
+            if (memberWs && memberWs.readyState === WebSocket.OPEN) {
+                memberWs.send(broadcastData);
+            }
+        });
+
+        createSystemMessage(group, "Group ID has been reset by the owner.");
+
+        res.json({ success: true, newId });
+    } else {
+        res.status(500).json({ error: "Failed to reset ID" });
+    }
+});
+
+// Update Group Settings (Name/Avatar)
+app.post("/api/groups/settings", (req, res) => {
+    const { groupId, requester, name, avatar } = req.body;
+    const groupPath = getGroupFilePath(groupId);
+    const group = readJSON(groupPath);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    if (group.owner !== requester) return res.status(403).json({ error: "Only owner can change settings" });
+
+    if (name) group.name = name;
+    if (avatar !== undefined) group.avatar = avatar;
+
+    writeJSON(groupPath, group);
+
+    createSystemMessage(group, "Group settings updated");
+
+    res.json({ success: true, group });
+});
+
 
 // Get My Groups
 app.get("/api/my-groups", (req, res) => {
@@ -344,20 +568,22 @@ app.get("/api/my-groups", (req, res) => {
     for (const groupId of user.groups) {
       const g = readJSON(getGroupFilePath(groupId));
       if (g) {
-          // If DM, format name
           let name = g.name;
+          let avatar = g.avatar;
           if (g.type === 'dm') {
               const other = g.members.find(m => m !== username) || "Unknown";
-              name = other; // DM name is the other person
+              name = other;
+              const otherUser = readJSON(getUserFilePath(other));
+              if (otherUser) avatar = otherUser.avatar;
           }
-          groups.push({ id: g.id, name: name, type: g.type });
+          groups.push({ id: g.id, name: name, type: g.type, avatar: avatar });
       }
     }
   }
   res.json({ groups });
 });
 
-// Get Group Messages
+// Get Group Data
 app.get("/api/groups/:id", (req, res) => {
   const group = readJSON(getGroupFilePath(req.params.id));
   if (!group) return res.status(404).json({ error: "Group not found" });
@@ -390,35 +616,67 @@ wss.on("connection", (ws) => {
         const group = readJSON(groupPath);
 
         if (group) {
-          const msgObj = {
-            id: crypto.randomUUID(),
-            user,
-            text,
-            timestamp: Date.now(),
-            readBy: [user] // sender has read it
-          };
-          group.messages.push(msgObj);
-          writeJSON(groupPath, group);
+            if (!group.members.includes(user)) return;
 
-          const broadcastData = JSON.stringify({
-            type: "new_message",
-            groupId,
-            message: msgObj
-          });
+            const msgObj = {
+                id: crypto.randomUUID(),
+                user,
+                text,
+                timestamp: Date.now(),
+                readBy: [user],
+                receivedBy: [user]
+            };
+            group.messages.push(msgObj);
+            writeJSON(groupPath, group);
 
-          group.members.forEach(member => {
-            const memberWs = clients.get(member);
-            if (memberWs && memberWs.readyState === WebSocket.OPEN) {
-              memberWs.send(broadcastData);
-            }
-          });
+            broadcastToGroup(group, {
+                type: "new_message",
+                groupId,
+                message: msgObj
+            });
         }
+      }
+      else if (data.type === "received_message") {
+          const { groupId, user, messageId } = data;
+
+          // To handle multiple messages or batch, usually an array.
+          // But let's stick to simpler update: Mark "all before X" or just "this message".
+          // If the user sends received for a message, we add them to receivedBy.
+          // To make it simple: Update the group file and broadcast.
+
+           const groupPath = getGroupFilePath(groupId);
+           const group = readJSON(groupPath);
+
+           if (group) {
+               let changed = false;
+               // Find the message or if we want "Received all messages in this group"?
+               // Usually "Opened app, got update" -> "Received".
+               // Let's assume client sends this for specific messages or latest.
+               // If data has messageId, update that. If not, update all unreceived?
+               // Let's try to update all messages the user hasn't marked as received yet.
+
+               group.messages.forEach(msg => {
+                   if (msg.type === 'system') return;
+                   if (!msg.receivedBy) msg.receivedBy = [];
+                   if (!msg.receivedBy.includes(user)) {
+                       msg.receivedBy.push(user);
+                       changed = true;
+                   }
+               });
+
+               if (changed) {
+                   writeJSON(groupPath, group);
+                   broadcastToGroup(group, {
+                       type: "delivery_update",
+                       groupId,
+                       user,
+                       receivedBy: user // informs others this user received them
+                   });
+               }
+           }
       }
       else if (data.type === "read_message") {
         const { groupId, user } = data;
-        // Mark all messages in group as read by user
-        // Optimization: client should send specific message IDs, but usually "opening chat" reads all.
-        // For simplicity, let's mark all messages in the group as read by this user.
 
         const groupPath = getGroupFilePath(groupId);
         const group = readJSON(groupPath);
@@ -426,7 +684,16 @@ wss.on("connection", (ws) => {
         if (group) {
             let changed = false;
             group.messages.forEach(msg => {
+                if (msg.type === 'system') return;
                 if (!msg.readBy) msg.readBy = [];
+                if (!msg.receivedBy) msg.receivedBy = [];
+
+                // If read, it must be received
+                if (!msg.receivedBy.includes(user)) {
+                    msg.receivedBy.push(user);
+                    changed = true;
+                }
+
                 if (!msg.readBy.includes(user)) {
                     msg.readBy.push(user);
                     changed = true;
@@ -435,19 +702,12 @@ wss.on("connection", (ws) => {
 
             if (changed) {
                 writeJSON(groupPath, group);
-                // Broadcast read update
-                 const broadcastData = JSON.stringify({
+                // Broadcast
+                broadcastToGroup(group, {
                     type: "read_update",
                     groupId,
                     user,
-                    readBy: user // inform others that this user read messages
-                });
-
-                group.members.forEach(member => {
-                    const memberWs = clients.get(member);
-                    if (memberWs && memberWs.readyState === WebSocket.OPEN) {
-                        memberWs.send(broadcastData);
-                    }
+                    readBy: user
                 });
             }
         }

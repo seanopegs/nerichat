@@ -3,3 +3,11 @@
 > node server.js
 
 Server running on port 25577
+WS: User userA connected
+WS: User userB connected
+WS: User userB disconnected
+WS: User userB connected
+WS: User userB disconnected
+WS: User userB connected
+WS: User userA disconnected
+WS: User userB disconnected
