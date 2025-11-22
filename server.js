@@ -41,15 +41,6 @@ const wss = new WebSocket.Server({ server });
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Initialize Database and Migrate
-initDB()
-    .then(() => migrate())
-    .then(() => updateSchema())
-    .catch(err => {
-        console.error("Failed to initialize database or migrate:", err);
-        process.exit(1);
-    });
-
 // --- Helper Functions ---
 
 const clients = new Map(); // username -> ws
@@ -1016,6 +1007,17 @@ wss.on("connection", (ws) => {
 });
 
 const PORT = process.env.PORT || 25577;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+
+// Initialize Database and Migrate, then start server
+initDB()
+    .then(() => migrate())
+    .then(() => updateSchema())
+    .then(() => {
+        server.listen(PORT, () => {
+            console.log(`Server running on port ${PORT}`);
+        });
+    })
+    .catch(err => {
+        console.error("Failed to initialize database or migrate:", err);
+        process.exit(1);
+    });
