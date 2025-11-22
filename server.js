@@ -131,6 +131,7 @@ app.post("/api/upload", (req, res) => {
             success: true,
             url: fileUrl,
             filename: req.file.originalname,
+            originalFilename: req.file.originalname,
             type: isImage ? 'image' : 'file'
         });
     });
@@ -317,6 +318,99 @@ app.post("/api/user/pin", async (req, res) => {
 
         const pinned = await all(`SELECT group_id FROM pinned_chats WHERE username = ?`, [username]);
         res.json({ success: true, pinned_chats: pinned.map(p => p.group_id) });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+app.post("/api/groups/settings", async (req, res) => {
+    const { groupId, requester, avatar, invite_permission, name } = req.body;
+    try {
+        const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
+        if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner" });
+
+        const updates = [];
+        const params = [];
+
+        if (avatar !== undefined) {
+            updates.push("avatar = ?");
+            params.push(avatar);
+        }
+        if (invite_permission !== undefined) {
+            updates.push("invite_permission = ?");
+            params.push(invite_permission);
+        }
+        if (name !== undefined) {
+            updates.push("name = ?");
+            params.push(name);
+        }
+
+        if (updates.length > 0) {
+            params.push(groupId);
+            await run(`UPDATE groups SET ${updates.join(", ")} WHERE id = ?`, params);
+
+            // Notify members about update?
+            // For now, simple success. Frontend reloads info.
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+app.post("/api/groups/reset-id", async (req, res) => {
+    const { groupId, requester } = req.body;
+    try {
+        const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
+        if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner" });
+
+        const newId = crypto.randomUUID();
+
+        // We need to update ID. This is tricky with foreign keys.
+        // SQLite doesn't cascade updates easily unless configured.
+        // Better to create new group and move everything? Or force update.
+        // Let's try force update with deferred foreign keys or just assume cascade update is ON?
+        // `PRAGMA foreign_keys = ON;` is default in some drivers but not all.
+        // My `initDB` doesn't explicitly enable it, but `node-sqlite3` might not enforcing it strictly or `ON UPDATE CASCADE` isn't in schema.
+        // My schema has `ON DELETE CASCADE` but not `ON UPDATE CASCADE`.
+
+        // Since changing primary key is hard, maybe just update the join code?
+        // No, the user wants to "Reset Group ID".
+
+        // Simpler approach: Update the ID in `groups` table.
+        // If FK constraint fails, we know.
+        // To properly support this, we should have added `ON UPDATE CASCADE`.
+        // Since we didn't, we might break links.
+
+        // Alternative: Just return success and say "Not implemented fully" or try to update manually.
+        // Manual update:
+        // 1. Create new group with new ID.
+        // 2. Move members, messages, etc.
+        // 3. Delete old group.
+
+        // Let's do manual copy-move.
+
+        await run(`INSERT INTO groups (id, name, type, owner, invite_permission, avatar, created_at)
+                   SELECT ?, name, type, owner, invite_permission, avatar, created_at FROM groups WHERE id = ?`, [newId, groupId]);
+
+        await run(`UPDATE group_members SET group_id = ? WHERE group_id = ?`, [newId, groupId]);
+        await run(`UPDATE messages SET group_id = ? WHERE group_id = ?`, [newId, groupId]);
+        await run(`UPDATE muted_members SET group_id = ? WHERE group_id = ?`, [newId, groupId]);
+        await run(`UPDATE pinned_chats SET group_id = ? WHERE group_id = ?`, [newId, groupId]);
+
+        await run(`DELETE FROM groups WHERE id = ?`, [groupId]);
+
+        // Broadcast ID change?
+        broadcastToGroup(newId, {
+            type: 'group_id_changed',
+            oldId: groupId,
+            newId: newId
+        });
+
+        res.json({ success: true, newId });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Internal server error" });
@@ -834,7 +928,7 @@ wss.on("connection", (ws) => {
         });
       }
       else if (data.type === "message") {
-        const { groupId, text, user, replyTo, attachmentUrl, attachmentType } = data;
+        const { groupId, text, user, replyTo, attachmentUrl, attachmentType, originalFilename } = data;
         if (!groupId || (!text && !attachmentUrl) || !user) return;
 
         // Check Mute
@@ -856,8 +950,8 @@ wss.on("connection", (ws) => {
 
         const type = attachmentUrl ? attachmentType : 'text';
 
-        await run(`INSERT INTO messages (id, group_id, sender_username, content, type, reply_to, timestamp, attachment_url, attachment_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [msgId, groupId, user, text || "", type, replyTo, timestamp, attachmentUrl, attachmentType]);
+        await run(`INSERT INTO messages (id, group_id, sender_username, content, type, reply_to, timestamp, attachment_url, attachment_type, original_filename) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [msgId, groupId, user, text || "", type, replyTo, timestamp, attachmentUrl, attachmentType, originalFilename]);
 
         // Insert receipt for sender
         await run(`INSERT INTO message_receipts (message_id, username, received_at, read_at) VALUES (?, ?, ?, ?)`,
@@ -871,6 +965,7 @@ wss.on("connection", (ws) => {
             timestamp,
             attachmentUrl,
             attachmentType,
+            originalFilename,
             readBy: [user],
             receivedBy: [user]
         };
