@@ -29,6 +29,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const messagesContainer = document.getElementById('messages');
   const messageInput = document.getElementById('messageInput');
   const sendBtn = document.getElementById('sendBtn');
+  const fileInput = document.getElementById('fileInput');
+  const attachBtn = document.getElementById('attachBtn');
+  const groupAvatarUpload = document.getElementById('groupAvatarUpload');
+  const editGroupAvatarInput = document.getElementById('editGroupAvatarInput');
 
   // Reply State
   let replyToMessage = null;
@@ -152,6 +156,44 @@ document.addEventListener('DOMContentLoaded', async () => {
                 renderFriends();
             }
         }
+      } else if (data.type === 'message_updated') {
+          if (currentGroup && data.groupId === currentGroup.id) {
+              const msgEl = document.querySelector(`.message-content[data-id="${data.messageId}"]`);
+              if (msgEl) {
+                  let textContainer = msgEl.querySelector('.message-text');
+                  let textEl = msgEl.querySelector('.message-text-content');
+
+                  if (!textEl) {
+                      // Create it if it doesn't exist (e.g. added text to file message)
+                      textEl = document.createElement('span');
+                      textEl.className = 'message-text-content';
+                      textContainer.appendChild(textEl);
+                  }
+
+                  textEl.textContent = data.text;
+
+                  const editedSpan = msgEl.querySelector('.edited-indicator');
+                  if (!editedSpan) {
+                       const span = document.createElement('span');
+                       span.className = 'edited-indicator';
+                       span.textContent = ' (edited)';
+                       span.style.fontSize = '0.7rem';
+                       span.style.color = 'var(--text-muted)';
+                       span.style.fontStyle = 'italic';
+                       textContainer.appendChild(span);
+                  }
+              }
+          }
+      } else if (data.type === 'message_deleted') {
+          if (currentGroup && data.groupId === currentGroup.id) {
+              const msgEl = document.querySelector(`.message-content[data-id="${data.messageId}"]`);
+              if (msgEl) {
+                   const textContainer = msgEl.querySelector('.message-text');
+                   if (textContainer) {
+                       textContainer.innerHTML = '<i style="color:var(--text-muted)">This message was deleted</i>';
+                   }
+              }
+          }
       } else if (data.type === 'read_update') {
           if (currentGroup && data.groupId === currentGroup.id) {
              updateReadReceipts(data.user);
@@ -628,23 +670,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    let contentHtml = '';
+    if (msg.is_deleted) {
+        contentHtml = '<i style="color:var(--text-muted)">This message was deleted</i>';
+    } else {
+        if (msg.attachmentUrl) {
+            if (msg.attachmentType === 'image') {
+                contentHtml += `<div style="margin-bottom:5px;"><img src="${msg.attachmentUrl}" style="max-width:200px; max-height:200px; border-radius:8px; cursor:pointer;" onclick="window.open('${msg.attachmentUrl}', '_blank')"></div>`;
+            } else {
+                // get filename from url
+                const fname = msg.attachmentUrl.split('/').pop();
+                contentHtml += `<div style="margin-bottom:5px;"><a href="${msg.attachmentUrl}" download target="_blank" style="color:var(--primary); text-decoration:none; display:flex; align-items:center; gap:5px; background:rgba(0,0,0,0.05); padding:10px; border-radius:8px;"><i class="fas fa-file"></i> ${fname}</a></div>`;
+            }
+        }
+        if (msg.text) {
+            contentHtml += `<span class="message-text-content"></span>`;
+        }
+        if (msg.is_edited) {
+             contentHtml += `<span class="edited-indicator" style="font-size:0.7rem; color:var(--text-muted); font-style:italic;"> (edited)</span>`;
+        }
+    }
+
     div.innerHTML = `
       <img src="${userInfo.avatar}" class="message-avatar" alt="Avatar">
-      <div class="message-content" title="Long press or Right click for options">
+      <div class="message-content" data-id="${msg.id}" title="Long press or Right click for options">
         ${msg.replyTo ? `<div class="reply-quote">
              <div style="font-weight:bold; color:var(--primary);">${msg.replyTo.userDisplayName || 'User'}</div>
-             <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${msg.replyTo.text}</div>
+             <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${msg.replyTo.text || 'Attachment'}</div>
         </div>` : ''}
         <div class="message-header">
           <span style="font-weight:600">${userInfo.displayName}</span>
           <span>${time}</span>
         </div>
-        <div class="message-text"></div>
+        <div class="message-text">${contentHtml}</div>
       </div>
     `;
-    // Set text content safely
-    const textDiv = div.querySelector('.message-text');
-    textDiv.textContent = msg.text;
+
+    // Set text content safely if exists and not deleted
+    if (!msg.is_deleted && msg.text) {
+        const textDiv = div.querySelector('.message-text-content');
+        if(textDiv) textDiv.textContent = msg.text;
+    }
 
     // Append checkmarks inline/floated
     if (isMe) {
@@ -721,13 +787,80 @@ document.addEventListener('DOMContentLoaded', async () => {
           return div;
       };
 
-      contextMenu.appendChild(createOption("Reply", "fas fa-reply", () => {
-          replyToMessage = { id: msg.id, text: msg.text, userDisplayName: userInfo.displayName };
-          document.getElementById('replyToUser').textContent = userInfo.displayName;
-          document.getElementById('replyToText').textContent = msg.text;
-          replyBanner.classList.add('active');
-          messageInput.focus();
-      }));
+      if (!msg.is_deleted) {
+          contextMenu.appendChild(createOption("Reply", "fas fa-reply", () => {
+              replyToMessage = { id: msg.id, text: msg.text || (msg.attachmentUrl ? '[File]' : ''), userDisplayName: userInfo.displayName };
+              document.getElementById('replyToUser').textContent = userInfo.displayName;
+              document.getElementById('replyToText').textContent = msg.text || (msg.attachmentUrl ? '[File]' : '');
+              replyBanner.classList.add('active');
+              messageInput.focus();
+          }));
+      }
+
+      // Edit & Delete (My message & < 5 mins)
+      const isMe = msg.user === user.username;
+      const isRecent = (Date.now() - msg.timestamp) < 5 * 60 * 1000;
+
+      if (isMe && !msg.is_deleted && isRecent) {
+          if (msg.type === 'text' && !msg.attachmentUrl) { // Currently only editing text msgs without attachments implies text update.
+              // If it has attachment, editing text is also fine.
+              contextMenu.appendChild(createOption("Edit", "fas fa-edit", () => {
+                  // Enter edit mode
+                  const msgEl = document.querySelector(`.message-content[data-id="${msg.id}"]`);
+                  if(msgEl) {
+                       const textContainer = msgEl.querySelector('.message-text');
+                       const originalHtml = textContainer.innerHTML;
+                       const originalText = msg.text;
+
+                       textContainer.innerHTML = `
+                          <div style="display:flex; gap:5px; margin-top:5px;">
+                             <input type="text" class="edit-input input-field" value="${originalText}" style="padding:5px; height:30px;">
+                             <button class="btn btn-sm btn-primary save-edit"><i class="fas fa-check"></i></button>
+                             <button class="btn btn-sm btn-danger cancel-edit"><i class="fas fa-times"></i></button>
+                          </div>
+                       `;
+
+                       textContainer.querySelector('.save-edit').onclick = (ev) => {
+                           ev.stopPropagation();
+                           const newText = textContainer.querySelector('.edit-input').value;
+                           if (newText !== originalText) {
+                               ws.send(JSON.stringify({
+                                   type: 'edit_message',
+                                   groupId: currentGroup.id,
+                                   messageId: msg.id,
+                                   text: newText,
+                                   user: user.username
+                               }));
+                           }
+                           // Optimistic update or wait for server? Wait for server.
+                           // But we need to exit edit mode.
+                           // Let's revert to original for now, server update will trigger change.
+                           textContainer.innerHTML = originalHtml;
+                           // Actually if we just leave it, server update will overwrite innerHTML or textContent
+                       };
+
+                       textContainer.querySelector('.cancel-edit').onclick = (ev) => {
+                           ev.stopPropagation();
+                           textContainer.innerHTML = originalHtml;
+                           // Restore text content
+                           if(textContainer.querySelector('.message-text-content'))
+                               textContainer.querySelector('.message-text-content').textContent = originalText;
+                       };
+                  }
+              }));
+          }
+
+          contextMenu.appendChild(createOption("Delete", "fas fa-trash", () => {
+              if(confirm("Delete this message?")) {
+                   ws.send(JSON.stringify({
+                       type: 'delete_message',
+                       groupId: currentGroup.id,
+                       messageId: msg.id,
+                       user: user.username
+                   }));
+              }
+          }, true));
+      }
 
       if (currentGroup.type !== 'dm') {
           contextMenu.appendChild(createOption("Seen by", "fas fa-eye", async () => {
@@ -780,7 +913,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function sendMessage() {
     if (!currentGroup) return alert('Select a group or friend first');
     const text = messageInput.value.trim();
-    if (!text) return;
+    if (!text) return; // Just text
 
     const payload = {
       type: 'message',
@@ -796,6 +929,40 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     replyToMessage = null;
     replyBanner.classList.remove('active');
+  }
+
+  async function sendFile(file) {
+      if (!currentGroup) return alert('Select a group first');
+      if (file.size > 1024 * 1024) return alert('File too large (max 1MB)');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+          const res = await fetch('/api/upload', { method: 'POST', body: formData });
+          const data = await res.json();
+
+          if (data.success) {
+              // Send WS message with attachment
+              const payload = {
+                  type: 'message',
+                  groupId: currentGroup.id,
+                  text: messageInput.value.trim(), // Optional caption
+                  user: user.username,
+                  replyTo: replyToMessage,
+                  attachmentUrl: data.url,
+                  attachmentType: data.type
+              };
+              ws.send(JSON.stringify(payload));
+
+              messageInput.value = '';
+              messageInput.style.height = 'auto';
+              replyToMessage = null;
+              replyBanner.classList.remove('active');
+          } else {
+              alert(data.error);
+          }
+      } catch(e) { console.error(e); alert('Upload failed'); }
   }
 
   // --- Logic: Group Info Modal ---
@@ -1356,6 +1523,51 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // --- Event Listeners ---
+
+  // Drag & Drop
+  chatArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      chatArea.style.background = 'var(--bg-color)';
+      // maybe show overlay
+  });
+
+  chatArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          sendFile(e.dataTransfer.files[0]);
+      }
+  });
+
+  attachBtn.addEventListener('click', () => {
+      fileInput.click();
+  });
+
+  fileInput.addEventListener('change', () => {
+      if(fileInput.files && fileInput.files[0]) {
+          sendFile(fileInput.files[0]);
+          fileInput.value = '';
+      }
+  });
+
+  groupAvatarUpload.addEventListener('change', async () => {
+      if (groupAvatarUpload.files && groupAvatarUpload.files[0]) {
+          const file = groupAvatarUpload.files[0];
+           if (file.size > 1024 * 1024) return alert('File too large (max 1MB)');
+
+           const formData = new FormData();
+           formData.append('file', file);
+           try {
+               const res = await fetch('/api/upload', { method: 'POST', body: formData });
+               const data = await res.json();
+               if(data.success) {
+                   editGroupAvatarInput.value = data.url;
+                   alert('Image uploaded. Click Save to apply.');
+               } else {
+                   alert(data.error);
+               }
+           } catch(e) { console.error(e); }
+      }
+  });
 
   if (mobileBackBtn) {
       mobileBackBtn.addEventListener('click', () => {

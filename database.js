@@ -70,6 +70,10 @@ function initSchema() {
                     type TEXT,
                     reply_to TEXT,
                     timestamp INTEGER,
+                    is_edited INTEGER DEFAULT 0,
+                    is_deleted INTEGER DEFAULT 0,
+                    attachment_url TEXT,
+                    attachment_type TEXT,
                     FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
                 )`);
 
@@ -153,8 +157,35 @@ function all(sql, params = []) {
     });
 }
 
+function updateSchema() {
+    return new Promise((resolve, reject) => {
+        if (!db) return reject(new Error("Database not initialized"));
+        db.serialize(() => {
+            // Add new columns if they don't exist
+            // SQLite doesn't support IF NOT EXISTS for ADD COLUMN well in all versions, but try/catch or checking pragma is safer.
+            // We'll just try to add them. If error (duplicate column), we ignore.
+            const columns = [
+                "ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0",
+                "ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0",
+                "ALTER TABLE messages ADD COLUMN attachment_url TEXT",
+                "ALTER TABLE messages ADD COLUMN attachment_type TEXT"
+            ];
+
+            let completed = 0;
+            columns.forEach(sql => {
+                db.run(sql, (err) => {
+                    // Ignore errors about duplicate columns
+                    completed++;
+                    if (completed === columns.length) resolve();
+                });
+            });
+        });
+    });
+}
+
 module.exports = {
     initDB,
+    updateSchema,
     run,
     get,
     all,
