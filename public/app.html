@@ -144,6 +144,30 @@
     </div>
   </div>
 
+  <!-- Attachment Preview Modal -->
+  <div id="attachmentPreviewModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 400px;">
+      <div class="modal-header">
+        <span>Send Attachment</span>
+        <span class="close-modal-preview">&times;</span>
+      </div>
+      <div style="text-align: center; margin-bottom: 15px;">
+          <img id="previewImage" src="" style="max-width: 100%; max-height: 300px; border-radius: 8px; display: none;">
+          <div id="previewFile" style="display: none; padding: 20px; background: var(--input-bg); border-radius: 8px;">
+              <i class="fas fa-file" style="font-size: 3rem; color: var(--primary);"></i>
+              <div id="previewFileName" style="margin-top: 10px; font-weight: 600;"></div>
+          </div>
+      </div>
+      <div class="form-group">
+        <input type="text" id="attachmentCaption" class="input-field" placeholder="Add a caption...">
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button id="cancelAttachmentBtn" class="btn btn-secondary" style="width: auto;">Cancel</button>
+          <button id="sendAttachmentBtn" class="btn btn-primary" style="width: auto;">Send</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Friend Modal -->
   <div id="addFriendModal" class="modal hidden">
     <div class="modal-content">

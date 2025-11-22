@@ -166,7 +166,8 @@ function updateSchema() {
                 "ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0",
                 "ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0",
                 "ALTER TABLE messages ADD COLUMN attachment_url TEXT",
-                "ALTER TABLE messages ADD COLUMN attachment_type TEXT"
+                "ALTER TABLE messages ADD COLUMN attachment_type TEXT",
+                "ALTER TABLE messages ADD COLUMN original_filename TEXT"
             ];
 
             let completed = 0;

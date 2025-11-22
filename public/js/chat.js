@@ -34,6 +34,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const groupAvatarUpload = document.getElementById('groupAvatarUpload');
   const editGroupAvatarInput = document.getElementById('editGroupAvatarInput');
 
+  // Attachment Preview Elements
+  const attachmentPreviewModal = document.getElementById('attachmentPreviewModal');
+  const closePreviewModal = document.querySelector('.close-modal-preview');
+  const previewImage = document.getElementById('previewImage');
+  const previewFile = document.getElementById('previewFile');
+  const previewFileName = document.getElementById('previewFileName');
+  const attachmentCaption = document.getElementById('attachmentCaption');
+  const sendAttachmentBtn = document.getElementById('sendAttachmentBtn');
+  const cancelAttachmentBtn = document.getElementById('cancelAttachmentBtn');
+  let pendingFile = null;
+
   // Reply State
   let replyToMessage = null;
   const chatInputArea = document.querySelector('.chat-input-area');
@@ -190,6 +201,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                   }
 
                   textEl.textContent = data.text;
+                  textEl.style.display = ''; // Ensure visible if it was hidden by edit mode
 
                   const editedSpan = msgEl.querySelector('.edited-indicator');
                   if (!editedSpan) {
@@ -209,7 +221,11 @@ document.addEventListener('DOMContentLoaded', async () => {
               if (msgEl) {
                    const textContainer = msgEl.querySelector('.message-text');
                    if (textContainer) {
-                       textContainer.innerHTML = '<i style="color:var(--text-muted)">This message was deleted</i>';
+                       // Remove any attachment preview
+                       const imgs = textContainer.querySelectorAll('img, a');
+                       imgs.forEach(el => el.parentNode.remove());
+
+                       textContainer.innerHTML = '<span class="message-text deleted">This message was deleted</span>';
                    }
               }
           }
@@ -251,12 +267,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               avatar: data.user.avatar
           });
 
-          // Remove from requests if it was there (in case I accepted)
-          // If I accepted, I already updated UI? No, let's rely on reload or manual update.
-          // But wait, 'friend_accepted' is sent to both.
-
-          // If I am the one who accepted, I might have handled it in the click handler?
-          // But the event is sure way.
           // Check if already exists
           if (!friends.find(f => f.username === data.user.username)) {
              friends.push(data.user);
@@ -280,9 +290,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
           renderFriends();
       } else if (data.type === 'group_added') {
-          // data.groupId
-          // Fetch group info and add to list
-          // We need to fetch the group details to render it
            try {
               const res = await fetch(`/api/groups/${data.groupId}`);
               if (res.ok) {
@@ -333,33 +340,7 @@ document.addEventListener('DOMContentLoaded', async () => {
            const gIndex = groups.findIndex(g => g.type === 'dm' && g.name === data.username);
            if (gIndex !== -1) {
                groups[gIndex].avatar = data.user.avatar;
-               // Name usually stays username for DMs in list logic above,
-               // but if we used display name there, we'd update it.
-               // My logic uses username for DM name in 'groups' array, but fetches display name on render?
-               // No, renderGroups uses group.name.
-               // My 'loadGroups' sets group.name = other (username).
-               // renderGroups displays group.name.
-               // So DM list shows username.
-               // If we want to show Display Name in DM list, we should update 'loadGroups'.
                renderGroups();
-           }
-
-           // Update current chat header if applicable
-           if (currentGroup) {
-               if (currentGroup.type === 'dm' && currentGroup.name === data.username) {
-                   // Update header?
-                   // Header usually shows currentGroup.name (username).
-                   // If we want display name in header:
-                   // My switchGroup logic sets chatHeaderName to group.name.
-                   // Ideally DMs should show display name.
-               }
-
-               // Update messages avatars/names
-               const msgs = messagesContainer.querySelectorAll('.message');
-               // Rerender all messages? Or just find and update.
-               // Simpler to just let next render handle it or reload messages if specific user.
-               // Let's just update avatar images with matching src?
-               // Complex. Let's leave it for now, next open will fix.
            }
       }
     });
@@ -691,15 +672,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let contentHtml = '';
     if (msg.is_deleted) {
-        contentHtml = '<i style="color:var(--text-muted)">This message was deleted</i>';
+        contentHtml = `<span class="message-text deleted">This message was deleted</span>`;
     } else {
         if (msg.attachmentUrl) {
             if (msg.attachmentType === 'image') {
                 contentHtml += `<div style="margin-bottom:5px;"><img src="${msg.attachmentUrl}" style="max-width:200px; max-height:200px; border-radius:8px; cursor:pointer;" onclick="window.open('${msg.attachmentUrl}', '_blank')"></div>`;
             } else {
-                // get filename from url
-                const fname = msg.attachmentUrl.split('/').pop();
-                contentHtml += `<div style="margin-bottom:5px;"><a href="${msg.attachmentUrl}" download target="_blank" style="color:var(--primary); text-decoration:none; display:flex; align-items:center; gap:5px; background:rgba(0,0,0,0.05); padding:10px; border-radius:8px;"><i class="fas fa-file"></i> ${fname}</a></div>`;
+                const fname = msg.originalFilename || msg.attachmentUrl.split('/').pop();
+                contentHtml += `<div style="margin-bottom:5px;"><a href="${msg.attachmentUrl}" download="${fname}" target="_blank" style="color:var(--primary); text-decoration:none; display:flex; align-items:center; gap:5px; background:rgba(0,0,0,0.05); padding:10px; border-radius:8px;"><i class="fas fa-file"></i> ${fname}</a></div>`;
             }
         }
         if (msg.text) {
@@ -826,27 +806,36 @@ document.addEventListener('DOMContentLoaded', async () => {
       const isRecent = (Date.now() - msg.timestamp) < 5 * 60 * 1000;
 
       if (isMe && !msg.is_deleted && isRecent) {
-          if (msg.type === 'text' && !msg.attachmentUrl) { // Currently only editing text msgs without attachments implies text update.
-              // If it has attachment, editing text is also fine.
+          if (msg.text || msg.type === 'text') {
               contextMenu.appendChild(createOption("Edit", "fas fa-edit", () => {
-                  // Enter edit mode
                   const msgEl = document.querySelector(`.message-content[data-id="${msg.id}"]`);
                   if(msgEl) {
                        const textContainer = msgEl.querySelector('.message-text');
-                       const originalHtml = textContainer.innerHTML;
                        const originalText = msg.text;
 
-                       textContainer.innerHTML = `
-                          <div style="display:flex; gap:5px; margin-top:5px;">
+                       const textSpan = textContainer.querySelector('.message-text-content');
+                       if (!textSpan) return;
+
+                       const originalDisplay = textSpan.style.display;
+                       textSpan.style.display = 'none';
+
+                       if(textContainer.querySelector('.edit-wrapper')) return;
+
+                       const editDiv = document.createElement('div');
+                       editDiv.className = 'edit-wrapper';
+                       editDiv.style.display = 'flex';
+                       editDiv.style.gap = '5px';
+                       editDiv.style.marginTop = '5px';
+                       editDiv.innerHTML = `
                              <input type="text" class="edit-input input-field" value="${originalText}" style="padding:5px; height:30px;">
                              <button class="btn btn-sm btn-primary save-edit"><i class="fas fa-check"></i></button>
                              <button class="btn btn-sm btn-danger cancel-edit"><i class="fas fa-times"></i></button>
-                          </div>
                        `;
+                       textContainer.appendChild(editDiv);
 
-                       textContainer.querySelector('.save-edit').onclick = (ev) => {
+                       editDiv.querySelector('.save-edit').onclick = (ev) => {
                            ev.stopPropagation();
-                           const newText = textContainer.querySelector('.edit-input').value;
+                           const newText = editDiv.querySelector('.edit-input').value;
                            if (newText !== originalText) {
                                ws.send(JSON.stringify({
                                    type: 'edit_message',
@@ -856,19 +845,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                                    user: user.username
                                }));
                            }
-                           // Optimistic update or wait for server? Wait for server.
-                           // But we need to exit edit mode.
-                           // Let's revert to original for now, server update will trigger change.
-                           textContainer.innerHTML = originalHtml;
-                           // Actually if we just leave it, server update will overwrite innerHTML or textContent
+                           editDiv.remove();
+                           textSpan.style.display = originalDisplay;
                        };
 
-                       textContainer.querySelector('.cancel-edit').onclick = (ev) => {
+                       editDiv.querySelector('.cancel-edit').onclick = (ev) => {
                            ev.stopPropagation();
-                           textContainer.innerHTML = originalHtml;
-                           // Restore text content
-                           if(textContainer.querySelector('.message-text-content'))
-                               textContainer.querySelector('.message-text-content').textContent = originalText;
+                           editDiv.remove();
+                           textSpan.style.display = originalDisplay;
                        };
                   }
               }));
@@ -955,30 +939,63 @@ document.addEventListener('DOMContentLoaded', async () => {
     replyBanner.classList.remove('active');
   }
 
-  async function sendFile(file) {
+  function sendFile(file) {
       if (!currentGroup) return alert('Select a group first');
       if (file.size > 1024 * 1024) return alert('File too large (max 1MB)');
 
+      pendingFile = file;
+
+      // Show Preview Modal
+      attachmentPreviewModal.classList.remove('hidden');
+      attachmentCaption.value = messageInput.value.trim(); // Pre-fill caption if any
+
+      if (file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+              previewImage.src = e.target.result;
+              previewImage.style.display = 'block';
+              previewFile.style.display = 'none';
+          };
+          reader.readAsDataURL(file);
+      } else {
+          previewImage.style.display = 'none';
+          previewFile.style.display = 'block';
+          previewFileName.textContent = file.name;
+      }
+
+      attachmentCaption.focus();
+  }
+
+  // Send from Modal
+  sendAttachmentBtn.addEventListener('click', async () => {
+      if (!pendingFile) return;
+
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', pendingFile);
+
+      sendAttachmentBtn.disabled = true;
+      sendAttachmentBtn.textContent = 'Sending...';
 
       try {
           const res = await fetch('/api/upload', { method: 'POST', body: formData });
           const data = await res.json();
 
           if (data.success) {
-              // Send WS message with attachment
               const payload = {
                   type: 'message',
                   groupId: currentGroup.id,
-                  text: messageInput.value.trim(), // Optional caption
+                  text: attachmentCaption.value.trim(),
                   user: user.username,
                   replyTo: replyToMessage,
                   attachmentUrl: data.url,
-                  attachmentType: data.type
+                  attachmentType: data.type,
+                  originalFilename: data.originalFilename
               };
               ws.send(JSON.stringify(payload));
 
+              // Cleanup
+              attachmentPreviewModal.classList.add('hidden');
+              pendingFile = null;
               messageInput.value = '';
               messageInput.style.height = 'auto';
               replyToMessage = null;
@@ -987,7 +1004,20 @@ document.addEventListener('DOMContentLoaded', async () => {
               alert(data.error);
           }
       } catch(e) { console.error(e); alert('Upload failed'); }
-  }
+
+      sendAttachmentBtn.disabled = false;
+      sendAttachmentBtn.textContent = 'Send';
+  });
+
+  cancelAttachmentBtn.addEventListener('click', () => {
+      attachmentPreviewModal.classList.add('hidden');
+      pendingFile = null;
+  });
+
+  closePreviewModal.addEventListener('click', () => {
+      attachmentPreviewModal.classList.add('hidden');
+      pendingFile = null;
+  });
 
   // --- Logic: Group Info Modal ---
 
@@ -1118,11 +1148,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           inviteSection.appendChild(toggleDiv);
           toggleDiv.querySelector('input').onchange = async (e) => {
               const newPerm = e.target.checked ? 'all' : 'admin';
-              await fetch('/api/groups/settings', {
+              const res = await fetch('/api/groups/settings', {
                   method: 'POST',
                   headers: {'Content-Type': 'application/json'},
                   body: JSON.stringify({ groupId: fullGroup.id, requester: user.username, invite_permission: newPerm })
               });
+              if (!res.ok) alert('Failed to update permission');
           };
       }
 
@@ -1195,12 +1226,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function updateGroupSettings(groupId) {
       const avatar = document.getElementById('editGroupAvatarInput').value;
       if (avatar) {
-          await fetch('/api/groups/settings', {
+          const res = await fetch('/api/groups/settings', {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({ groupId, requester: user.username, avatar })
           });
-          openGroupInfo({id: groupId});
+          if (res.ok) {
+              openGroupInfo({id: groupId});
+          } else {
+              alert('Failed to update group settings');
+          }
       }
   }
 
@@ -1548,17 +1583,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // --- Event Listeners ---
 
-  // Drag & Drop
+  // Drag & Drop & Paste
   chatArea.addEventListener('dragover', (e) => {
       e.preventDefault();
       chatArea.style.background = 'var(--bg-color)';
-      // maybe show overlay
   });
 
   chatArea.addEventListener('drop', (e) => {
       e.preventDefault();
+      chatArea.style.background = '';
       if (e.dataTransfer.files && e.dataTransfer.files[0]) {
           sendFile(e.dataTransfer.files[0]);
+      }
+  });
+
+  // Paste Support
+  document.addEventListener('paste', (e) => {
+      if (!currentGroup) return;
+      const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      for (let index in items) {
+          const item = items[index];
+          if (item.kind === 'file') {
+              const blob = item.getAsFile();
+              sendFile(blob);
+              e.preventDefault();
+              return;
+          }
       }
   });
 

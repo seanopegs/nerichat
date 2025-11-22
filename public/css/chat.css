@@ -308,6 +308,15 @@
     word-wrap: break-word;
 }
 
+.message-text.deleted {
+    font-style: italic;
+    color: var(--text-muted);
+}
+
+.message.me .message-text.deleted {
+    color: rgba(255,255,255,0.7) !important;
+}
+
 .message-footer {
     display: none;
 }
