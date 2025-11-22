@@ -160,10 +160,8 @@ function all(sql, params = []) {
 function updateSchema() {
     return new Promise((resolve, reject) => {
         if (!db) return reject(new Error("Database not initialized"));
+        console.log("Updating schema...");
         db.serialize(() => {
-            // Add new columns if they don't exist
-            // SQLite doesn't support IF NOT EXISTS for ADD COLUMN well in all versions, but try/catch or checking pragma is safer.
-            // We'll just try to add them. If error (duplicate column), we ignore.
             const columns = [
                 "ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0",
                 "ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0",
@@ -174,9 +172,14 @@ function updateSchema() {
             let completed = 0;
             columns.forEach(sql => {
                 db.run(sql, (err) => {
-                    // Ignore errors about duplicate columns
+                    if (err && !err.message.includes('duplicate column')) {
+                         console.warn(`Schema update warning: ${err.message}`);
+                    }
                     completed++;
-                    if (completed === columns.length) resolve();
+                    if (completed === columns.length) {
+                        console.log("Schema update complete.");
+                        resolve();
+                    }
                 });
             });
         });
