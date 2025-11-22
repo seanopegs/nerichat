@@ -99,6 +99,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Cache self
   userCache[user.username] = { avatar: user.avatar, displayName: user.displayName };
 
+  // Verify User Exists (Session Check)
+  try {
+      const res = await fetch(`/api/user/${user.username}`);
+      if (res.status === 404) {
+          alert('User session invalid or account deleted.');
+          localStorage.removeItem('chatUser');
+          window.location.href = '/';
+          return;
+      }
+      if (res.ok) {
+          const remoteUser = await res.json();
+          // Update local data with fresh data from server
+          user = { ...user, ...remoteUser };
+          localStorage.setItem('chatUser', JSON.stringify(user));
+      }
+  } catch (e) {
+      console.error("Session check failed", e);
+  }
+
   // Connect WebSocket
   setupWebSocket();
 
