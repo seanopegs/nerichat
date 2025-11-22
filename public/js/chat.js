@@ -327,16 +327,17 @@ document.addEventListener('DOMContentLoaded', async () => {
               if (!readBy.includes(readByUser)) readBy.push(readByUser);
               div.setAttribute('data-read-by', JSON.stringify(readBy));
 
+              let isRead = false;
               if (currentGroup.type === 'dm') {
-                   if (readBy.length > 1) {
-                       tick.classList.add('read');
-                       tick.innerHTML = '<i class="fas fa-check-double"></i>';
-                   }
+                   isRead = readBy.length > 1;
               } else {
-                  if (readBy.length >= currentGroup.members.length) {
-                       tick.classList.add('read');
-                       tick.innerHTML = '<i class="fas fa-check-double"></i>';
-                  }
+                  const members = currentGroup.members;
+                  isRead = members.every(m => readBy.includes(m));
+              }
+
+              if (isRead) {
+                   tick.classList.add('read');
+                   tick.innerHTML = '<i class="fas fa-check-double"></i>';
               }
           }
       });
@@ -347,21 +348,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       msgs.forEach(div => {
           const tick = div.querySelector('.read-receipt');
           if (tick && !tick.classList.contains('read')) {
-               const icon = tick.querySelector('i');
-               if (icon && !icon.classList.contains('fa-check-double')) {
-                   let receivedBy = div.getAttribute('data-received-by') ? JSON.parse(div.getAttribute('data-received-by')) : [];
-                   if (!receivedByUser) return;
-                   if (!receivedBy.includes(receivedByUser)) receivedBy.push(receivedByUser);
-                   div.setAttribute('data-received-by', JSON.stringify(receivedBy));
+               let receivedBy = div.getAttribute('data-received-by') ? JSON.parse(div.getAttribute('data-received-by')) : [];
+               if (!receivedByUser) return;
+               if (!receivedBy.includes(receivedByUser)) receivedBy.push(receivedByUser);
+               div.setAttribute('data-received-by', JSON.stringify(receivedBy));
 
-                   if (currentGroup.type === 'dm') {
-                       if (receivedBy.length > 1) {
-                           tick.innerHTML = '<i class="fas fa-check-double"></i>';
-                       }
-                   } else {
-                       if (receivedBy.length >= currentGroup.members.length) {
-                           tick.innerHTML = '<i class="fas fa-check-double"></i>';
-                       }
+               let isReceived = false;
+               if (currentGroup.type === 'dm') {
+                   isReceived = receivedBy.length > 1;
+               } else {
+                   const members = currentGroup.members;
+                   isReceived = members.every(m => receivedBy.includes(m));
+               }
+
+               if (isReceived) {
+                   const icon = tick.querySelector('i');
+                   if (icon && !icon.classList.contains('fa-check-double')) {
+                       tick.innerHTML = '<i class="fas fa-check-double"></i>';
                    }
                }
           }
@@ -600,16 +603,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tickClass = '';
 
     if (isMe) {
-        const readCount = (msg.readBy || []).length;
-        const receivedCount = (msg.receivedBy || []).length;
-        const memberCount = currentGroup.members.length;
+        const readBy = msg.readBy || [];
+        const receivedBy = msg.receivedBy || [];
 
-        let isRead = readCount >= memberCount;
-        let isReceived = receivedCount >= memberCount;
+        let isRead = false;
+        let isReceived = false;
 
         if (currentGroup.type === 'dm') {
-             isRead = readCount > 1;
-             isReceived = receivedCount > 1;
+             isRead = readBy.length > 1;
+             isReceived = receivedBy.length > 1;
+        } else {
+             const members = currentGroup.members;
+             isRead = members.every(m => readBy.includes(m));
+             isReceived = members.every(m => receivedBy.includes(m));
         }
 
         if (isRead) {
