@@ -215,3 +215,13 @@ input:checked + .slider:before {
 .btn-danger:hover {
   background: rgba(239, 68, 68, 0.2);
 }
+
+/* Mobile Responsiveness for Settings */
+@media (max-width: 768px) {
+    .settings-container {
+        width: 95%;
+        margin: 2rem auto;
+        padding: 1.5rem;
+        max-width: none;
+    }
+}

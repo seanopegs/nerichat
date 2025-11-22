@@ -634,12 +634,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           <span>${time}</span>
         </div>
         <div class="message-text"></div>
-        <div class="message-footer">
-           ${isMe ? `<span class="read-receipt ${tickClass}">${tickHtml}</span>` : ''}
-        </div>
       </div>
     `;
-    div.querySelector('.message-text').textContent = msg.text;
+    // Set text content safely
+    const textDiv = div.querySelector('.message-text');
+    textDiv.textContent = msg.text;
+
+    // Append checkmarks inline/floated
+    if (isMe) {
+        const floatSpan = document.createElement('span');
+        floatSpan.className = 'message-float-right';
+        floatSpan.innerHTML = `<span class="read-receipt ${tickClass}">${tickHtml}</span>`;
+        textDiv.appendChild(floatSpan);
+    }
 
     const contentDiv = div.querySelector('.message-content');
     contentDiv.addEventListener('contextmenu', (e) => {
