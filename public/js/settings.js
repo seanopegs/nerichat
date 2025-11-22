@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Fetch latest user data to ensure settings are up to date
   try {
     const res = await fetch(`/api/user/${user.username}`);
+    if (res.status === 404) {
+        alert('Account deleted or session invalid.');
+        localStorage.removeItem('chatUser');
+        window.location.href = '/';
+        return;
+    }
     if (res.ok) {
        const updatedUser = await res.json();
        // Merge safely
