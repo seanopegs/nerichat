@@ -3,11 +3,38 @@ const http = require("http");
 const WebSocket = require("ws");
 const path = require("path");
 const crypto = require("crypto");
-const { initDB, run, get, all } = require("./database");
+const multer = require("multer");
+const fs = require("fs");
+const { initDB, updateSchema, run, get, all } = require("./database");
 const { migrate } = require("./migrate");
 
 const app = express();
 const server = http.createServer(app);
+
+// Configure Multer for file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const dir = path.join(__dirname, 'public', 'uploads');
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        cb(null, dir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 1024 * 1024 }, // 1MB limit
+    fileFilter: (req, file, cb) => {
+        // Accept images and generic files.
+        // The requirement says "kirim gambar / file" (send image / file)
+        cb(null, true);
+    }
+});
 const wss = new WebSocket.Server({ server });
 
 // Middleware
@@ -17,6 +44,7 @@ app.use(express.static(path.join(__dirname, "public")));
 // Initialize Database and Migrate
 initDB()
     .then(() => migrate())
+    .then(() => updateSchema())
     .catch(err => {
         console.error("Failed to initialize database or migrate:", err);
         process.exit(1);
@@ -86,6 +114,36 @@ function broadcastStatusUpdate(username, status) {
 }
 
 // --- API Routes ---
+
+// Upload File
+app.post("/api/upload", (req, res) => {
+    upload.single('file')(req, res, function (err) {
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ error: "File size exceeds 1MB limit." });
+            }
+            return res.status(500).json({ error: err.message });
+        } else if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: "No file uploaded." });
+        }
+
+        // Return relative path
+        const fileUrl = `/uploads/${req.file.filename}`;
+        // Determine type roughly
+        const isImage = req.file.mimetype.startsWith('image/');
+
+        res.json({
+            success: true,
+            url: fileUrl,
+            filename: req.file.originalname,
+            type: isImage ? 'image' : 'file'
+        });
+    });
+});
 
 // Register
 app.post("/api/register", async (req, res) => {
@@ -721,6 +779,18 @@ app.get("/api/groups/:id", async (req, res) => {
             m.text = m.content; // compatibility
             m.user = m.sender_username;
             m.replyTo = m.reply_to;
+
+            // CamelCase mapping for frontend
+            m.attachmentUrl = m.attachment_url;
+            m.attachmentType = m.attachment_type;
+            m.isEdited = !!m.is_edited; // Frontend code used snake_case for checks in one place, but camelCase is better practice.
+            // Wait, frontend code checks msg.is_edited?
+            // Let's check frontend code again.
+            // Frontend uses `msg.is_edited` in the patch provided previously.
+            // "if (msg.is_edited) { ... }"
+            // "if (msg.is_deleted) { ... }"
+            // So snake_case is expected by my frontend changes for those flags.
+            // But attachmentUrl was definitely camelCase in frontend render logic.
         }
 
         const groupData = {
@@ -773,8 +843,8 @@ wss.on("connection", (ws) => {
         });
       }
       else if (data.type === "message") {
-        const { groupId, text, user, replyTo } = data;
-        if (!groupId || !text || !user) return;
+        const { groupId, text, user, replyTo, attachmentUrl, attachmentType } = data;
+        if (!groupId || (!text && !attachmentUrl) || !user) return;
 
         // Check Mute
         const muted = await get(`SELECT muted_until FROM muted_members WHERE group_id = ? AND username = ?`, [groupId, user]);
@@ -793,8 +863,10 @@ wss.on("connection", (ws) => {
         const msgId = crypto.randomUUID();
         const timestamp = Date.now();
 
-        await run(`INSERT INTO messages (id, group_id, sender_username, content, type, reply_to, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [msgId, groupId, user, text, 'text', replyTo, timestamp]);
+        const type = attachmentUrl ? attachmentType : 'text';
+
+        await run(`INSERT INTO messages (id, group_id, sender_username, content, type, reply_to, timestamp, attachment_url, attachment_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [msgId, groupId, user, text || "", type, replyTo, timestamp, attachmentUrl, attachmentType]);
 
         // Insert receipt for sender
         await run(`INSERT INTO message_receipts (message_id, username, received_at, read_at) VALUES (?, ?, ?, ?)`,
@@ -803,9 +875,11 @@ wss.on("connection", (ws) => {
         const msgObj = {
             id: msgId,
             user,
-            text,
+            text: text || "",
             replyTo,
             timestamp,
+            attachmentUrl,
+            attachmentType,
             readBy: [user],
             receivedBy: [user]
         };
@@ -815,6 +889,64 @@ wss.on("connection", (ws) => {
             groupId,
             message: msgObj
         });
+      }
+      else if (data.type === "edit_message") {
+          const { messageId, text, user, groupId } = data;
+          // Check existence
+          const msg = await get(`SELECT * FROM messages WHERE id = ?`, [messageId]);
+          if (!msg) return;
+
+          // Check Ownership
+          if (msg.sender_username !== user) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Not authorized' }));
+              return;
+          }
+
+          // Check Time Limit (5 minutes)
+          if (Date.now() - msg.timestamp > 5 * 60 * 1000) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Edit time limit exceeded (5 mins)' }));
+              return;
+          }
+
+          if (msg.is_deleted) {
+               ws.send(JSON.stringify({ type: 'error', message: 'Cannot edit deleted message' }));
+               return;
+          }
+
+          await run(`UPDATE messages SET content = ?, is_edited = 1 WHERE id = ?`, [text, messageId]);
+
+          broadcastToGroup(groupId, {
+              type: "message_updated",
+              groupId,
+              messageId,
+              text
+          });
+      }
+      else if (data.type === "delete_message") {
+          const { messageId, user, groupId } = data;
+           // Check existence
+          const msg = await get(`SELECT * FROM messages WHERE id = ?`, [messageId]);
+          if (!msg) return;
+
+          // Check Ownership
+          if (msg.sender_username !== user) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Not authorized' }));
+              return;
+          }
+
+          // Check Time Limit (5 minutes)
+          if (Date.now() - msg.timestamp > 5 * 60 * 1000) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Delete time limit exceeded (5 mins)' }));
+              return;
+          }
+
+          await run(`UPDATE messages SET is_deleted = 1, content = '' WHERE id = ?`, [messageId]);
+
+          broadcastToGroup(groupId, {
+              type: "message_deleted",
+              groupId,
+              messageId
+          });
       }
       else if (data.type === "received_message") {
           const { groupId, user, messageId } = data;

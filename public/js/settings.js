@@ -32,10 +32,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   const passwordInput = document.getElementById('passwordInput');
   const saveBtn = document.getElementById('saveBtn');
   const removeAvatarBtn = document.getElementById('removeAvatarBtn');
+  const profileAvatarUpload = document.getElementById('profileAvatarUpload');
   const themeToggle = document.getElementById('themeToggle');
   const invisibleToggle = document.getElementById('invisibleToggle');
   const logoutBtn = document.getElementById('logoutBtn');
   const backBtn = document.getElementById('backBtn');
+
+  // Handle File Upload
+  profileAvatarUpload.addEventListener('change', async () => {
+      if (profileAvatarUpload.files && profileAvatarUpload.files[0]) {
+          const file = profileAvatarUpload.files[0];
+          if (file.size > 1024 * 1024) return alert('File too large (max 1MB)');
+
+          const formData = new FormData();
+          formData.append('file', file);
+
+          try {
+              const res = await fetch('/api/upload', {
+                  method: 'POST',
+                  body: formData
+              });
+              const data = await res.json();
+              if (data.success) {
+                  avatarInput.value = data.url; // Save relative URL
+                  avatarPreview.src = data.url;
+              } else {
+                  alert(data.error);
+              }
+          } catch (e) { console.error(e); }
+      }
+  });
 
   // Init Values
   avatarPreview.src = user.avatar;
