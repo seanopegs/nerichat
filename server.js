@@ -612,6 +612,36 @@ function isOwnerOrAdmin(group, member) {
 
 // Promote/Demote/Delete/Reset-ID ... (Implementing simplified versions for brevity but retaining logic)
 
+app.post("/api/groups/promote", async (req, res) => {
+    const { groupId, requester, target } = req.body;
+    try {
+        const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
+        if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner can promote" });
+
+        await run(`UPDATE group_members SET is_admin = 1 WHERE group_id = ? AND username = ?`, [groupId, target]);
+        await createSystemMessage(groupId, `${target} was promoted to Admin by ${requester}`);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+app.post("/api/groups/demote", async (req, res) => {
+    const { groupId, requester, target } = req.body;
+    try {
+        const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
+        if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner can demote" });
+
+        await run(`UPDATE group_members SET is_admin = 0 WHERE group_id = ? AND username = ?`, [groupId, target]);
+        await createSystemMessage(groupId, `${target} was demoted by ${requester}`);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 app.post("/api/groups/delete", async (req, res) => {
     const { groupId, requester } = req.body;
     try {
