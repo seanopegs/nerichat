@@ -736,7 +736,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const floatSpan = document.createElement('span');
         floatSpan.className = 'message-float-right';
         floatSpan.innerHTML = `<span class="read-receipt ${tickClass}">${tickHtml}</span>`;
-        textDiv.appendChild(floatSpan);
+
+        // Append to the text container so it works for files too
+        const textContainer = div.querySelector('.message-text');
+        if (textContainer) {
+             textContainer.appendChild(floatSpan);
+        }
     }
 
     const contentDiv = div.querySelector('.message-content');
