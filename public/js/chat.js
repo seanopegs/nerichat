@@ -87,6 +87,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const groupInfoModal = document.getElementById('groupInfoModal');
   const closeInfoModal = document.querySelector('.close-modal-info');
 
+  // Lightbox elements
+  const imageLightboxModal = document.getElementById('imageLightboxModal');
+  const lightboxImage = document.getElementById('lightboxImage');
+  const closeLightbox = document.querySelector('.close-modal-lightbox');
+
   const sidebar = document.getElementById('sidebar');
   const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
   const chatArea = document.getElementById('chatArea');
@@ -676,10 +681,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
         if (msg.attachmentUrl) {
             if (msg.attachmentType === 'image') {
-                contentHtml += `<div style="margin-bottom:5px;"><img src="${msg.attachmentUrl}" style="max-width:200px; max-height:200px; border-radius:8px; cursor:pointer;" onclick="window.open('${msg.attachmentUrl}', '_blank')"></div>`;
+                // Use a unique ID or data attribute to handle click in JS, or just global function
+                // However, sticking to event listeners or global function is fine.
+                // Let's use a global function for simplicity since we are in module scope here mostly
+                // But 'openLightbox' needs to be defined.
+                contentHtml += `<div style="margin-bottom:5px;"><img src="${msg.attachmentUrl}" style="max-width:200px; max-height:200px; border-radius:8px; cursor:pointer;" class="chat-image" data-src="${msg.attachmentUrl}"></div>`;
             } else {
                 const fname = msg.originalFilename || msg.attachmentUrl.split('/').pop();
-                contentHtml += `<div style="margin-bottom:5px;"><a href="${msg.attachmentUrl}" download="${fname}" target="_blank" style="color:var(--primary); text-decoration:none; display:flex; align-items:center; gap:5px; background:rgba(0,0,0,0.05); padding:10px; border-radius:8px;"><i class="fas fa-file"></i> ${fname}</a></div>`;
+                contentHtml += `<div style="margin-bottom:5px;"><a href="${msg.attachmentUrl}" download="${fname}" target="_blank" class="file-attachment-link"><i class="fas fa-file"></i> ${fname}</a></div>`;
             }
         }
         if (msg.text) {
@@ -725,6 +734,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const contentDiv = div.querySelector('.message-content');
+
+    // Image click handler
+    const imgEl = contentDiv.querySelector('.chat-image');
+    if (imgEl) {
+        imgEl.onclick = (e) => {
+            e.stopPropagation(); // Prevent message click/menu
+            openLightbox(imgEl.dataset.src);
+        };
+    }
+
     contentDiv.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         showMessageContextMenu(e, msg, userInfo);
@@ -793,9 +812,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (!msg.is_deleted) {
           contextMenu.appendChild(createOption("Reply", "fas fa-reply", () => {
-              replyToMessage = { id: msg.id, text: msg.text || (msg.attachmentUrl ? '[File]' : ''), userDisplayName: userInfo.displayName };
+              const isImage = msg.attachmentType === 'image';
+              replyToMessage = {
+                  id: msg.id,
+                  text: msg.text || (msg.attachmentUrl ? (isImage ? '[Photo]' : '[File]') : ''),
+                  userDisplayName: userInfo.displayName,
+                  attachmentUrl: isImage ? msg.attachmentUrl : null
+              };
+
               document.getElementById('replyToUser').textContent = userInfo.displayName;
-              document.getElementById('replyToText').textContent = msg.text || (msg.attachmentUrl ? '[File]' : '');
+
+              const replyTextContainer = document.getElementById('replyToText');
+              replyTextContainer.innerHTML = ''; // Clear previous
+
+              if (isImage && msg.attachmentUrl) {
+                  const img = document.createElement('img');
+                  img.src = msg.attachmentUrl;
+                  img.className = 'reply-thumbnail'; // Defined in chat.css
+                  replyTextContainer.appendChild(img);
+
+                  const span = document.createElement('span');
+                  span.textContent = msg.text || '[Photo]';
+                  replyTextContainer.appendChild(span);
+
+                  // Adjust banner layout to row for image
+                  replyTextContainer.style.display = 'flex';
+                  replyTextContainer.style.alignItems = 'center';
+              } else {
+                  replyTextContainer.textContent = msg.text || (msg.attachmentUrl ? '[File]' : '');
+                  replyTextContainer.style.display = 'block';
+              }
+
               replyBanner.classList.add('active');
               messageInput.focus();
           }));
@@ -1789,6 +1836,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.querySelector('.user-profile').addEventListener('click', () => {
     window.location.href = '/settings.html';
+  });
+
+  // Lightbox Logic
+  function openLightbox(src) {
+      lightboxImage.src = src;
+      imageLightboxModal.classList.remove('hidden');
+  }
+
+  if (closeLightbox) {
+      closeLightbox.addEventListener('click', () => {
+          imageLightboxModal.classList.add('hidden');
+          lightboxImage.src = '';
+      });
+  }
+
+  // Global Modal Outside Click Handler
+  window.addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal') || e.target.classList.contains('lightbox-modal')) {
+          e.target.classList.add('hidden');
+          // Clean up lightbox if closed this way
+          if(e.target.id === 'imageLightboxModal') {
+              lightboxImage.src = '';
+          }
+      }
   });
 
 });
