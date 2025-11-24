@@ -408,7 +408,14 @@
   cursor: pointer;
 }
 
-.switch-container input {
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.switch-container input, .switch input {
   opacity: 0;
   width: 0;
   height: 0;
@@ -713,13 +720,12 @@ input:checked + .slider:before {
 
 .lightbox-content {
     position: relative;
-    width: auto;
-    height: auto;
-    max-width: 90vw;
-    max-height: 90vh;
+    width: 100%;
+    height: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
+    pointer-events: none;
 }
 
 .lightbox-content img {
@@ -729,6 +735,8 @@ input:checked + .slider:before {
     box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
     object-fit: contain;
     display: block;
+    pointer-events: auto;
+    transition: transform 0.1s ease-out;
 }
 
 .close-modal-lightbox {

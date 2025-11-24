@@ -1730,26 +1730,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Drag & Drop & Paste
   chatArea.addEventListener('dragover', (e) => {
       e.preventDefault();
-      chatArea.style.background = 'var(--bg-color)';
+      chatArea.style.background = 'var(--bg-hover)';
   });
 
-  chatArea.addEventListener('drop', (e) => {
+  chatArea.addEventListener('drop', async (e) => {
       e.preventDefault();
       chatArea.style.background = '';
       if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-          sendFile(e.dataTransfer.files[0]);
+          let file = e.dataTransfer.files[0];
+          try {
+             if (file.type.startsWith('image/')) {
+                 file = await CropperUtils.cropImage(file);
+             }
+             sendFile(file);
+          } catch(e) {}
       }
   });
 
   // Paste Support
-  document.addEventListener('paste', (e) => {
+  document.addEventListener('paste', async (e) => {
       if (!currentGroup) return;
       const items = (e.clipboardData || e.originalEvent.clipboardData).items;
       for (let index in items) {
           const item = items[index];
           if (item.kind === 'file') {
-              const blob = item.getAsFile();
-              sendFile(blob);
+              let blob = item.getAsFile();
+              try {
+                  if (blob.type.startsWith('image/')) {
+                     blob = await CropperUtils.cropImage(blob);
+                  }
+                  sendFile(blob);
+              } catch(e) {}
               e.preventDefault();
               return;
           }
@@ -1760,17 +1771,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       fileInput.click();
   });
 
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener('change', async () => {
       if(fileInput.files && fileInput.files[0]) {
-          sendFile(fileInput.files[0]);
+          let file = fileInput.files[0];
+          try {
+             // Crop if image
+             if (file.type.startsWith('image/')) {
+                 file = await CropperUtils.cropImage(file); // Free aspect ratio
+             }
+             sendFile(file);
+          } catch(e) {
+              console.log("Cancelled");
+          }
           fileInput.value = '';
       }
   });
 
   groupAvatarUpload.addEventListener('change', async () => {
       if (groupAvatarUpload.files && groupAvatarUpload.files[0]) {
-          const file = groupAvatarUpload.files[0];
+          let file = groupAvatarUpload.files[0];
            if (file.size > 1024 * 1024) return alert('File too large (max 1MB)');
+
+           try {
+               file = await CropperUtils.cropImage(file, 1); // 1:1 Aspect Ratio
+           } catch(e) { return; }
 
            const formData = new FormData();
            formData.append('file', file);
@@ -1779,7 +1803,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                const data = await res.json();
                if(data.success) {
                    editGroupAvatarInput.value = data.url;
-                   alert('Image uploaded. Click Save to apply.');
+                   // Update preview if possible, but we don't have a direct preview element easily accessible here except by reloading?
+                   // The user has to click Save. Let's just alert for now or update the image src if we can find it.
+                   // Actually openGroupInfo creates the modal, so 'infoGroupAvatar' is the element.
+                   const img = document.getElementById('infoGroupAvatar');
+                   if(img) img.src = data.url;
                } else {
                    alert(data.error);
                }
@@ -1936,15 +1964,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Lightbox Logic
+  let zoomLevel = 1;
+
   function openLightbox(src) {
       lightboxImage.src = src;
       imageLightboxModal.classList.remove('hidden');
+      zoomLevel = 1;
+      lightboxImage.style.transform = `scale(${zoomLevel})`;
   }
+
+  // Zoom Logic
+  lightboxImage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      zoomLevel = Math.max(0.5, Math.min(zoomLevel + delta, 5));
+      lightboxImage.style.transform = `scale(${zoomLevel})`;
+  });
 
   if (closeLightbox) {
       closeLightbox.addEventListener('click', () => {
           imageLightboxModal.classList.add('hidden');
           lightboxImage.src = '';
+          zoomLevel = 1;
       });
   }
 
