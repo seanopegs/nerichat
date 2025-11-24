@@ -47,8 +47,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Handle File Upload
   profileAvatarUpload.addEventListener('change', async () => {
       if (profileAvatarUpload.files && profileAvatarUpload.files[0]) {
-          const file = profileAvatarUpload.files[0];
+          let file = profileAvatarUpload.files[0];
           if (file.size > 1024 * 1024) return alert('File too large (max 1MB)');
+
+          try {
+             file = await CropperUtils.cropImage(file, 1);
+          } catch(e) { return; }
 
           const formData = new FormData();
           formData.append('file', file);
