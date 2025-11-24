@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chat App</title>
+  <title>Neri Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/chat.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -20,7 +23,9 @@
           <div id="userDisplayName" class="name">Loading...</div>
           <div id="userUsername" class="username">...</div>
         </div>
-        <i class="fas fa-cog"></i>
+        <div class="settings-icon">
+            <i class="fas fa-cog"></i>
+        </div>
       </div>
 
       <div class="sidebar-nav">
@@ -35,16 +40,16 @@
 
        <!-- Friends List -->
       <div class="sidebar-list hidden" id="friendsList">
-          <div style="padding:10px">
-              <button id="addFriendBtn" class="btn btn-sm" style="width:100%">+ Add Friend</button>
+          <div style="padding:15px">
+              <button id="addFriendBtn" class="btn btn-secondary btn-sm btn-block"><i class="fas fa-user-plus"></i> Add Friend</button>
           </div>
           <div id="friendRequestsContainer"></div>
           <div id="friendsContainer"></div>
       </div>
 
       <div class="sidebar-actions">
-        <button id="createGroupBtn" class="btn btn-primary">+ New Group</button>
-        <button id="joinGroupBtn" class="btn btn-secondary">Join Group (ID)</button>
+        <button id="createGroupBtn" class="btn btn-primary"><i class="fas fa-plus"></i> New Group</button>
+        <button id="joinGroupBtn" class="btn btn-secondary"><i class="fas fa-hashtag"></i> Join via ID</button>
       </div>
 
     </div>
@@ -52,36 +57,45 @@
     <!-- Chat Area -->
     <div class="chat-area" id="chatArea">
       <div class="chat-header">
-        <div style="display:flex; align-items:center; gap:10px;">
+        <div class="chat-header-left">
           <!-- Mobile Back Button -->
-          <button id="mobileBackBtn" class="btn-icon mobile-only" style="background:transparent; border:none; color:var(--text-color); font-size:1.2rem; cursor:pointer; margin-right:5px; display: none;">
+          <button id="mobileBackBtn" class="btn-icon mobile-only">
               <i class="fas fa-arrow-left"></i>
           </button>
 
           <!-- Toggle Sidebar Button -->
-          <button id="sidebarToggleBtn" class="btn-icon desktop-only" style="background:transparent; border:none; color:var(--text-color); font-size:1.2rem; cursor:pointer; margin-right:10px;">
+          <button id="sidebarToggleBtn" class="btn-icon desktop-only">
               <i class="fas fa-bars"></i>
           </button>
 
-          <span id="chatHeaderName">Select a group</span>
-          <span id="groupIdDisplay" class="group-id-badge" style="display: none;" title="Click to copy ID">
-            ID: <span id="groupIdText"></span> <i class="fas fa-copy"></i>
-          </span>
+          <div class="header-info">
+             <span id="chatHeaderName">Select a group</span>
+             <span id="groupIdDisplay" class="group-id-badge" style="display: none;" title="Click to copy ID">
+                <span id="groupIdText"></span> <i class="fas fa-copy"></i>
+             </span>
+          </div>
         </div>
       </div>
 
       <div class="chat-messages" id="messages">
         <div class="empty-state">
-          <i class="fas fa-comments"></i>
+          <div class="empty-icon-wrapper">
+             <i class="fas fa-comments"></i>
+          </div>
+          <h3>Welcome to Neri Chat</h3>
           <p>Select a group or friend to start chatting</p>
         </div>
       </div>
 
+      <div class="reply-banner" id="replyBanner">
+          <!-- Populated by JS -->
+      </div>
+
       <div class="chat-input-area">
         <input type="file" id="fileInput" style="display: none;">
-        <button id="attachBtn" class="btn-icon" style="margin-right:5px;"><i class="fas fa-paperclip"></i></button>
+        <button id="attachBtn" class="btn-input-icon"><i class="fas fa-paperclip"></i></button>
         <textarea id="messageInput" placeholder="Type a message..." rows="1"></textarea>
-        <button id="sendBtn" class="btn-icon"><i class="fas fa-paper-plane"></i></button>
+        <button id="sendBtn" class="btn-send"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>
   </div>
@@ -90,55 +104,57 @@
   <div id="createGroupModal" class="modal hidden">
     <div class="modal-content">
       <div class="modal-header">
-        <span>Create New Group</span>
+        <h3>Create New Group</h3>
         <span class="close-modal">&times;</span>
       </div>
       <div class="form-group">
         <label>Group Name</label>
-        <input type="text" id="groupNameInput" class="input-field">
+        <input type="text" id="groupNameInput" class="input-field" placeholder="Enter group name...">
       </div>
-      <button id="submitCreateGroup" class="btn btn-primary">Create</button>
+      <div class="modal-actions">
+          <button id="submitCreateGroup" class="btn btn-primary">Create Group</button>
+      </div>
     </div>
   </div>
 
   <!-- Group Info Modal -->
   <div id="groupInfoModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-content">
       <div class="modal-header">
-        <span>Group Settings</span>
+        <h3>Group Settings</h3>
         <span class="close-modal-info">&times;</span>
       </div>
-      <div class="group-info-header" style="text-align:center; margin-bottom:20px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color);">
-          <div style="position: relative; width: 100px; height: 100px; margin: 0 auto 15px;">
-             <img id="infoGroupAvatar" src="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+      <div class="group-info-header">
+          <div class="avatar-wrapper">
+             <img id="infoGroupAvatar" src="">
           </div>
 
-          <h3 id="infoGroupName" style="margin:0; font-size: 1.5rem;"></h3>
-          <div class="group-id-container" style="background: var(--input-bg); display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 6px; margin-top: 5px;">
-              <small style="color:var(--text-muted); margin-right: 5px;">ID:</small>
-              <small id="infoGroupId" style="color:var(--text-color); user-select: text; font-family: monospace; font-size: 0.9rem;"></small>
+          <h3 id="infoGroupName"></h3>
+          <div class="group-id-pill">
+              <span class="label">ID:</span>
+              <span id="infoGroupId"></span>
           </div>
 
-          <div id="ownerControls" class="hidden" style="margin-top:15px; display: flex; flex-direction: column; gap: 10px;">
-             <div style="display: flex; gap: 5px; align-items:center;">
-                <input type="text" id="editGroupAvatarInput" placeholder="New Avatar URL or Upload" class="input-field" style="font-size:0.9rem;">
-                 <label for="groupAvatarUpload" class="btn btn-secondary" style="cursor:pointer; display:flex; align-items:center; justify-content:center; height:38px; margin-bottom:0;"><i class="fas fa-upload"></i></label>
+          <div id="ownerControls" class="hidden">
+             <div class="edit-avatar-group">
+                <input type="text" id="editGroupAvatarInput" placeholder="Avatar URL" class="input-field">
+                 <label for="groupAvatarUpload" class="btn-icon-small"><i class="fas fa-upload"></i></label>
                  <input type="file" id="groupAvatarUpload" style="display:none">
-                <button id="saveGroupSettingsBtn" class="btn btn-primary" style="width: auto;">Save</button>
+                <button id="saveGroupSettingsBtn" class="btn btn-primary btn-sm">Save</button>
              </div>
-             <div style="display: flex; gap: 10px; justify-content: center;">
-                 <button id="resetGroupIdBtn" class="btn btn-sm btn-secondary" style="width: auto;">Reset ID</button>
-                 <button id="deleteGroupBtn" class="btn btn-sm btn-danger" style="width: auto;">Delete Group</button>
+             <div class="owner-actions">
+                 <button id="resetGroupIdBtn" class="btn btn-secondary btn-sm">Reset ID</button>
+                 <button id="deleteGroupBtn" class="btn btn-danger btn-sm">Delete</button>
              </div>
           </div>
       </div>
 
-      <div style="max-height: 50vh; min-height: 200px; overflow-y:auto; padding-right: 5px;">
-          <h4 style="margin-bottom:15px; color: var(--text-muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px;">Members</h4>
+      <div class="members-list-container">
+          <h4>Members</h4>
           <div id="groupMembersList"></div>
       </div>
 
-      <div class="modal-footer" style="margin-top:20px; padding-top: 15px; border-top: 1px solid var(--border-color); text-align:right;">
+      <div class="modal-footer">
           <button id="leaveGroupBtn" class="btn btn-danger">Leave Group</button>
       </div>
     </div>
@@ -146,24 +162,24 @@
 
   <!-- Attachment Preview Modal -->
   <div id="attachmentPreviewModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 400px;">
+    <div class="modal-content">
       <div class="modal-header">
-        <span>Send Attachment</span>
+        <h3>Send Attachment</h3>
         <span class="close-modal-preview">&times;</span>
       </div>
-      <div style="text-align: center; margin-bottom: 15px;">
-          <img id="previewImage" src="" style="max-width: 100%; max-height: 300px; border-radius: 8px; display: none;">
-          <div id="previewFile" style="display: none; padding: 20px; background: var(--input-bg); border-radius: 8px;">
-              <i class="fas fa-file" style="font-size: 3rem; color: var(--primary);"></i>
-              <div id="previewFileName" style="margin-top: 10px; font-weight: 600;"></div>
+      <div class="preview-area">
+          <img id="previewImage" src="">
+          <div id="previewFile">
+              <i class="fas fa-file"></i>
+              <div id="previewFileName"></div>
           </div>
       </div>
       <div class="form-group">
         <input type="text" id="attachmentCaption" class="input-field" placeholder="Add a caption...">
       </div>
-      <div style="display: flex; justify-content: flex-end; gap: 10px;">
-          <button id="cancelAttachmentBtn" class="btn btn-secondary" style="width: auto;">Cancel</button>
-          <button id="sendAttachmentBtn" class="btn btn-primary" style="width: auto;">Send</button>
+      <div class="modal-actions-right">
+          <button id="cancelAttachmentBtn" class="btn btn-secondary">Cancel</button>
+          <button id="sendAttachmentBtn" class="btn btn-primary">Send</button>
       </div>
     </div>
   </div>
@@ -172,12 +188,12 @@
   <div id="addFriendModal" class="modal hidden">
     <div class="modal-content">
       <div class="modal-header">
-        <span>Add Friend</span>
+        <h3>Add Friend</h3>
         <span class="close-modal-friend">&times;</span>
       </div>
       <div class="form-group">
         <label>Username</label>
-        <div style="display:flex; gap:5px">
+        <div class="search-bar">
             <input type="text" id="friendSearchInput" class="input-field" placeholder="Search username...">
             <button id="searchUserBtn" class="btn btn-primary">Search</button>
         </div>
@@ -188,18 +204,18 @@
 
   <!-- User Profile Modal -->
   <div id="userProfileModal" class="modal hidden">
-      <div class="modal-content" style="max-width: 400px;">
+      <div class="modal-content">
           <div class="modal-header">
-              <span>Profile</span>
+              <h3>Profile</h3>
               <span class="close-modal-profile">&times;</span>
           </div>
-          <div style="text-align:center;">
-              <img id="profileModalAvatar" src="" style="width:120px;height:120px;border-radius:50%;object-fit:cover;margin-bottom:15px;box-shadow:0 5px 15px rgba(0,0,0,0.1);">
-              <h3 id="profileModalName" style="margin:0; font-size:1.5rem;"></h3>
-              <div id="profileModalUsername" style="color:var(--text-muted); margin-bottom:15px;"></div>
-              <div id="profileModalStatus" class="status-badge" style="display:inline-block; padding:5px 12px; border-radius:20px; background:rgba(0,0,0,0.05); font-size:0.9rem;"></div>
+          <div class="profile-card">
+              <img id="profileModalAvatar" src="">
+              <h3 id="profileModalName"></h3>
+              <div id="profileModalUsername"></div>
+              <div id="profileModalStatus" class="status-badge"></div>
           </div>
-          <div style="margin-top:25px; border-top:1px solid var(--border-color); padding-top:15px; display:flex; justify-content:center; gap:10px;">
+          <div class="modal-actions-center">
                <button id="profileModalMessageBtn" class="btn btn-primary"><i class="fas fa-comment"></i> Message</button>
           </div>
       </div>

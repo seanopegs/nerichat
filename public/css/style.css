@@ -1,113 +1,225 @@
 :root {
-  /* Light Mode */
-  --bg-color: #f9fafb;
-  --card-bg: #ffffff;
-  --text-color: #1f2937;
-  --text-muted: #6b7280;
-  --border-color: #e5e7eb;
-  --input-bg: #f3f4f6;
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
+  /* Modern Dark Theme Palette - Premium Feel */
+  --primary-hue: 250; /* Deep Violet/Indigo */
+  --primary: hsl(var(--primary-hue), 80%, 65%);
+  --primary-hover: hsl(var(--primary-hue), 85%, 60%);
+  --primary-light: hsl(var(--primary-hue), 80%, 75%);
+
+  --bg-dark: #0f1117; /* Very dark slate */
+  --bg-card: #1e2129; /* Slightly lighter for cards */
+  --bg-sidebar: #171920;
+  --bg-input: #292c36;
+
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --text-dim: #6b7280;
+
+  --border-color: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(30, 33, 41, 0.7);
+
   --danger: #ef4444;
   --success: #10b981;
+  --warning: #f59e0b;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
 }
 
-.dark-mode {
-  /* Dark Mode */
-  --bg-color: #111827;
-  --card-bg: #1f2937;
-  --text-color: #f3f4f6;
-  --text-muted: #9ca3af;
-  --border-color: #374151;
-  --input-bg: #374151;
-  --primary: #3b82f6;
-  --primary-hover: #60a5fa;
+/* CSS Reset & Base */
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
 body {
-  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
   margin: 0;
   padding: 0;
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  transition: background-color 0.3s, color 0.3s;
-}
-
-* {
-  box-sizing: border-box;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Typography */
 h1, h2, h3, h4, h5, h6 {
-  color: var(--text-color);
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+a:hover {
+  color: var(--primary-light);
 }
 
 /* Utilities */
-.hidden {
-  display: none !important;
-}
+.hidden { display: none !important; }
 
-/* Scrollbar */
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* Buttons Generic */
+/* Components: Inputs */
+.input-field {
+  width: 100%;
+  padding: 12px 16px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+  background-color: rgba(41, 44, 54, 1);
+}
+
+.input-field::placeholder {
+  color: var(--text-dim);
+}
+
+/* Components: Buttons */
 .btn {
-  display: inline-block;
-  padding: 12px 20px;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  border-radius: var(--radius-md);
   font-weight: 600;
-  text-align: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
   border: none;
   font-size: 0.95rem;
-  width: 100%;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn:active {
+  transform: scale(0.98);
 }
 
 .btn-primary {
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
   color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
+
 .btn-primary:hover {
-  background: var(--primary-hover);
+  box-shadow: 0 6px 15px rgba(99, 102, 241, 0.4);
+  filter: brightness(1.1);
+  transform: translateY(-1px);
 }
 
 .btn-secondary {
   background: transparent;
   border: 1px solid var(--border-color);
-  color: var(--text-color);
+  color: var(--text-main);
 }
+
 .btn-secondary:hover {
-  background: rgba(0,0,0,0.05);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .btn-danger {
   background: rgba(239, 68, 68, 0.1);
   color: var(--danger);
+  border: 1px solid transparent;
 }
+
 .btn-danger:hover {
   background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .btn-sm {
-    padding: 6px 12px;
-    font-size: 0.8rem;
-    width: auto;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  border-radius: var(--radius-sm);
 }
 
-/* Forms */
+.btn-block {
+  width: 100%;
+}
+
+/* Auth Page Styling */
+.auth-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top right, #2e1065, var(--bg-dark) 40%);
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(30, 33, 41, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 3rem 2.5rem;
+  border-radius: 24px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.auth-header h2 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(to right, #fff, #a5b4fc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.auth-header p {
+  color: var(--text-muted);
+}
+
 .form-group {
   margin-bottom: 1.5rem;
 }
@@ -115,102 +227,14 @@ h1, h2, h3, h4, h5, h6 {
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  font-weight: 600;
   font-size: 0.9rem;
-  color: var(--text-color);
-}
-
-input[type="text"],
-input[type="password"] {
-  width: 100%;
-  padding: 12px 15px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--input-bg);
-  color: var(--text-color);
-  font-size: 0.95rem;
-  transition: border-color 0.2s;
-}
-
-input[type="text"]:focus,
-input[type="password"]:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.15);
-}
-
-/* Auth Specific (Login/Register) */
-.auth-container {
-  max-width: 400px;
-  margin: 5rem auto;
-  background: var(--card-bg);
-  padding: 2.5rem;
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-  text-align: center;
-  width: 90%;
-}
-
-@media (max-width: 768px) {
-  .auth-container {
-    margin: 2rem auto;
-    padding: 1.5rem;
-    width: 90%;
-  }
-}
-
-.auth-header {
-  margin-bottom: 2rem;
-}
-
-.auth-header h2 {
-  margin-bottom: 0.5rem;
-  font-size: 1.8rem;
-}
-
-.auth-header p {
-  color: var(--text-muted);
-  margin: 0;
+  color: var(--text-main);
+  font-weight: 500;
 }
 
 .toggle-link {
   margin-top: 1.5rem;
+  text-align: center;
   font-size: 0.9rem;
   color: var(--text-muted);
-}
-
-.toggle-link a {
-  color: var(--primary);
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.toggle-link a:hover {
-  text-decoration: underline;
-}
-
-.input-field {
-  width: 100%;
-  padding: 12px 15px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--input-bg);
-  color: var(--text-color);
-  font-size: 0.95rem;
-  transition: border-color 0.2s;
-  font-family: inherit;
-}
-
-.input-field:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.15);
-}
-
-select.input-field {
-    appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 1rem center;
-    background-size: 1em;
 }
