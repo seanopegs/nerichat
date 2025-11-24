@@ -515,7 +515,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       contextMenu.style.position = 'absolute';
       contextMenu.style.left = e.pageX + 'px';
       contextMenu.style.top = e.pageY + 'px';
-      contextMenu.style.background = 'var(--card-bg)';
+      // Removed inline background to use CSS class
       contextMenu.style.zIndex = '2000';
       contextMenu.style.minWidth = '150px';
 
@@ -724,7 +724,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isMe) {
         const floatSpan = document.createElement('span');
         floatSpan.className = 'message-float-right';
-        floatSpan.innerHTML = `<span class="read-receipt ${tickClass}">${tickHtml}</span>`;
+        // Add timestamp for self messages too, next to checkmarks
+        const timeHtml = `<span class="message-time" style="margin-right:4px;">${time}</span>`;
+        floatSpan.innerHTML = `${timeHtml}<span class="read-receipt ${tickClass}">${tickHtml}</span>`;
 
         // Append to the text container so it works for files too
         const textContainer = div.querySelector('.message-text');
@@ -791,7 +793,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       contextMenu.style.position = 'absolute';
       contextMenu.style.left = x + 'px';
       contextMenu.style.top = y + 'px';
-      contextMenu.style.background = 'var(--card-bg)';
+      // Removed inline background
       contextMenu.style.zIndex = '2000';
       contextMenu.style.minWidth = '150px';
 
@@ -1185,11 +1187,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (isOwner && fullGroup.type !== 'dm') {
           const toggleDiv = document.createElement('div');
           toggleDiv.style.marginTop = '15px';
+          // Using the new switch-container CSS
           toggleDiv.innerHTML = `
             <label class="switch-container">
                 <span style="font-size:0.9rem; font-weight:600;">Allow all members to invite</span>
                 <input type="checkbox" id="invitePermToggle" ${invitePerm === 'all' ? 'checked' : ''}>
-                <span class="slider round"></span>
+                <span class="slider"></span>
             </label>
           `;
           inviteSection.appendChild(toggleDiv);
@@ -1510,7 +1513,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       contextMenu.style.position = 'absolute';
       contextMenu.style.left = e.pageX + 'px';
       contextMenu.style.top = e.pageY + 'px';
-      contextMenu.style.background = 'var(--card-bg)';
+      // Removed inline background
       contextMenu.style.zIndex = '2000';
       contextMenu.style.minWidth = '150px';
 
