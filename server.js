@@ -201,6 +201,10 @@ app.get("/api/user/:username", async (req, res) => {
       if (!user) return res.status(404).json({ error: "User not found" });
 
       user.invisible = !!user.invisible;
+
+      const pinned = await all(`SELECT group_id FROM pinned_chats WHERE username = ?`, [username]);
+      user.pinned_chats = pinned.map(p => p.group_id);
+
       res.json(user);
   } catch (err) {
       console.error(err);
@@ -863,7 +867,11 @@ app.get("/api/groups/:id", async (req, res) => {
             m.receivedBy = receipts.filter(r => r.received_at).map(r => r.username);
             m.text = m.content; // compatibility
             m.user = m.sender_username;
-            m.replyTo = m.reply_to;
+            try {
+                m.replyTo = m.reply_to ? JSON.parse(m.reply_to) : null;
+            } catch (e) {
+                m.replyTo = null;
+            }
 
             // CamelCase mapping for frontend
             m.attachmentUrl = m.attachment_url;
@@ -950,8 +958,10 @@ wss.on("connection", (ws) => {
 
         const type = attachmentUrl ? attachmentType : 'text';
 
+        const replyToString = replyTo ? JSON.stringify(replyTo) : null;
+
         await run(`INSERT INTO messages (id, group_id, sender_username, content, type, reply_to, timestamp, attachment_url, attachment_type, original_filename) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [msgId, groupId, user, text || "", type, replyTo, timestamp, attachmentUrl, attachmentType, originalFilename]);
+            [msgId, groupId, user, text || "", type, replyToString, timestamp, attachmentUrl, attachmentType, originalFilename]);
 
         // Insert receipt for sender
         await run(`INSERT INTO message_receipts (message_id, username, received_at, read_at) VALUES (?, ?, ?, ?)`,

@@ -418,6 +418,40 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
   }
 
+  function updateTabBadges() {
+      // Groups Tab
+      // Count groups with unread messages (excluding DMs)
+      const groupsUnread = groups.filter(g => g.type !== 'dm' && g.unreadCount > 0).length;
+
+      let gBadge = tabGroups.querySelector('.tab-badge');
+      if (groupsUnread > 0) {
+          if (!gBadge) {
+              gBadge = document.createElement('span');
+              gBadge.className = 'tab-badge';
+              tabGroups.appendChild(gBadge);
+          }
+          gBadge.textContent = groupsUnread;
+      } else if (gBadge) {
+          gBadge.remove();
+      }
+
+      // Friends Tab
+      // Count DMs with unread messages
+      const friendsUnread = groups.filter(g => g.type === 'dm' && g.unreadCount > 0).length;
+
+      let fBadge = tabFriends.querySelector('.tab-badge');
+      if (friendsUnread > 0) {
+          if (!fBadge) {
+              fBadge = document.createElement('span');
+              fBadge.className = 'tab-badge';
+              tabFriends.appendChild(fBadge);
+          }
+          fBadge.textContent = friendsUnread;
+      } else if (fBadge) {
+          fBadge.remove();
+      }
+  }
+
   // --- Logic: Users ---
 
   async function getUserInfo(username) {
@@ -467,6 +501,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function renderGroups() {
+    updateTabBadges();
     groupsList.innerHTML = '';
     groups.forEach(group => {
       if (group.type === 'dm') return;
@@ -476,7 +511,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       let badge = '';
       if (group.unreadCount > 0) {
-          badge = `<span style="background:red; color:white; border-radius:50%; padding:2px 6px; font-size:0.7rem; margin-left:auto;">${group.unreadCount}</span>`;
+          badge = `<span class="unread-badge">${group.unreadCount}</span>`;
       }
 
       let pinIcon = '';
@@ -699,13 +734,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    let replyHtml = '';
+    if (msg.replyTo) {
+        // Determine if we should show a thumbnail
+        // We show it if there is an URL and the text is either empty, '[Photo]', or the same as the URL (legacy)
+        const isPhoto = msg.replyTo.text === '[Photo]' || !msg.replyTo.text;
+        const hasThumb = msg.replyTo.attachmentUrl && isPhoto;
+
+        replyHtml = `<div class="reply-quote" data-reply-id="${msg.replyTo.id}">
+             ${hasThumb ? `<img src="${msg.replyTo.attachmentUrl}" class="reply-thumbnail">` : ''}
+             <div style="overflow:hidden; flex:1;">
+                 <div style="font-weight:bold; color:var(--primary); font-size:0.8rem;">${msg.replyTo.userDisplayName || 'User'}</div>
+                 <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:0.8;">${msg.replyTo.text || (msg.replyTo.attachmentUrl ? 'Attachment' : 'Message')}</div>
+             </div>
+        </div>`;
+    }
+
     div.innerHTML = `
       <img src="${userInfo.avatar}" class="message-avatar" alt="Avatar">
       <div class="message-content" data-id="${msg.id}" title="Long press or Right click for options">
-        ${msg.replyTo ? `<div class="reply-quote">
-             <div style="font-weight:bold; color:var(--primary);">${msg.replyTo.userDisplayName || 'User'}</div>
-             <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${msg.replyTo.text || 'Attachment'}</div>
-        </div>` : ''}
+        ${replyHtml}
         <div class="message-header">
           <span style="font-weight:600">${userInfo.displayName}</span>
           <span>${time}</span>
@@ -718,6 +766,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!msg.is_deleted && msg.text) {
         const textDiv = div.querySelector('.message-text-content');
         if(textDiv) textDiv.textContent = msg.text;
+    }
+
+    // Scroll to reply on click
+    if (msg.replyTo) {
+        const replyQuote = div.querySelector('.reply-quote');
+        if (replyQuote) {
+            replyQuote.onclick = (e) => {
+                e.stopPropagation();
+                const targetMsg = document.querySelector(`.message-content[data-id="${msg.replyTo.id}"]`);
+                if (targetMsg) {
+                    targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Highlight effect
+                    targetMsg.style.transition = 'background 0.5s';
+                    const origBg = targetMsg.style.background;
+                    targetMsg.style.background = 'rgba(99, 102, 241, 0.2)';
+                    setTimeout(() => {
+                        targetMsg.style.background = origBg;
+                    }, 1000);
+                }
+            };
+        }
     }
 
     // Append checkmarks inline/floated
@@ -1158,6 +1227,29 @@ document.addEventListener('DOMContentLoaded', async () => {
           list.appendChild(row);
       }
 
+      // Clean up previous dynamic sections
+      const oldInviteSection = document.getElementById('inviteSection');
+      if (oldInviteSection) oldInviteSection.remove();
+
+      // Setup dynamic UI
+      const infoContainer = document.querySelector('.group-info-header');
+
+      // Update ID Display with truncation and Copy button
+      const idDisplay = document.getElementById('infoGroupId');
+      // Truncate ID: first 8 ... last 4
+      const shortId = fullGroup.id.length > 12 ? `${fullGroup.id.substring(0,8)}...${fullGroup.id.substring(fullGroup.id.length-4)}` : fullGroup.id;
+
+      idDisplay.innerHTML = `
+        <span class="id-text" title="${fullGroup.id}">${shortId}</span>
+        <button class="btn-icon-tiny copy-id-btn" title="Copy ID"><i class="fas fa-copy"></i></button>
+      `;
+      idDisplay.querySelector('.copy-id-btn').onclick = () => {
+          navigator.clipboard.writeText(fullGroup.id);
+          const icon = idDisplay.querySelector('i');
+          icon.className = 'fas fa-check';
+          setTimeout(() => icon.className = 'fas fa-copy', 1500);
+      };
+
       const isMember = fullGroup.members.includes(user.username);
       const isAdmin = fullGroup.admins && fullGroup.admins.includes(user.username);
       const invitePerm = fullGroup.invite_permission || 'admin';
@@ -1166,44 +1258,45 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (invitePerm === 'all' && isMember) canInvite = true;
       if (invitePerm === 'admin' && (isAdmin || isOwner)) canInvite = true;
 
-      let inviteSection = document.getElementById('inviteSection');
-      if (!inviteSection) {
-          inviteSection = document.createElement('div');
-          inviteSection.id = 'inviteSection';
-          inviteSection.style.marginTop = '15px';
-          const parent = document.getElementById('ownerControls').parentNode;
-          parent.insertBefore(inviteSection, document.getElementById('ownerControls'));
+      // Container for actions (Invite + Owner Toggles)
+      let actionsContainer = document.getElementById('groupActionsContainer');
+      if (!actionsContainer) {
+          actionsContainer = document.createElement('div');
+          actionsContainer.id = 'groupActionsContainer';
+          actionsContainer.className = 'group-actions-container';
+          // Insert after the header info but before members list
+          infoContainer.appendChild(actionsContainer);
       }
-      inviteSection.innerHTML = '';
+      actionsContainer.innerHTML = '';
 
       if (canInvite && fullGroup.type !== 'dm') {
           const btn = document.createElement('button');
-          btn.className = 'btn btn-sm btn-primary';
-          btn.textContent = 'Add Member';
+          btn.className = 'btn btn-primary btn-block';
+          btn.innerHTML = '<i class="fas fa-user-plus"></i> Add Member';
+          btn.style.marginBottom = '15px';
           btn.onclick = () => openInviteModal(fullGroup);
-          inviteSection.appendChild(btn);
+          actionsContainer.appendChild(btn);
       }
 
       if (isOwner && fullGroup.type !== 'dm') {
           const toggleDiv = document.createElement('div');
-          toggleDiv.style.marginTop = '15px';
-          // Using the new switch-container CSS
+          toggleDiv.className = 'setting-toggle-row';
           toggleDiv.innerHTML = `
-            <label class="switch-container">
-                <span style="font-size:0.9rem; font-weight:600;">Allow all members to invite</span>
+            <span class="setting-label">Allow all members to invite</span>
+            <label class="switch">
                 <input type="checkbox" id="invitePermToggle" ${invitePerm === 'all' ? 'checked' : ''}>
-                <span class="slider"></span>
+                <span class="slider round"></span>
             </label>
           `;
-          inviteSection.appendChild(toggleDiv);
+          actionsContainer.appendChild(toggleDiv);
+
           toggleDiv.querySelector('input').onchange = async (e) => {
               const newPerm = e.target.checked ? 'all' : 'admin';
-              const res = await fetch('/api/groups/settings', {
+              await fetch('/api/groups/settings', {
                   method: 'POST',
                   headers: {'Content-Type': 'application/json'},
                   body: JSON.stringify({ groupId: fullGroup.id, requester: user.username, invite_permission: newPerm })
               });
-              if (!res.ok) alert('Failed to update permission');
           };
       }
 
@@ -1440,6 +1533,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function renderFriends() {
+      updateTabBadges();
       friendRequestsContainer.innerHTML = '';
       friendsContainer.innerHTML = '';
 
@@ -1471,7 +1565,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const dmGroup = groups.find(g => g.type === 'dm' && g.name === friend.username);
           let badge = '';
           if (dmGroup && dmGroup.unreadCount > 0) {
-              badge = `<span style="background:red; color:white; border-radius:50%; padding:2px 6px; font-size:0.7rem; margin-left:auto;">${dmGroup.unreadCount}</span>`;
+              badge = `<span class="unread-badge">${dmGroup.unreadCount}</span>`;
           }
 
           div.className = `friend-item`;
