@@ -910,3 +910,43 @@ input:checked + .slider:before {
     line-height: 1;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.4);
 }
+
+#leaveGroupBtn {
+  margin-top: 15px;
+}
+
+.group-actions-container {
+  width: 100%;
+  margin-top: 15px;
+}
+
+.setting-toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+.setting-toggle-row .slider {
+  background-color: var(--bg-input);
+}
+
+#infoGroupId {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.id-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.copy-id-btn {
+  margin-left: 10px;
+}
+
+.group-id-pill {
+    width: 100%;
+}
