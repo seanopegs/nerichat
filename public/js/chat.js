@@ -1237,11 +1237,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Update ID Display with truncation and Copy button
       const idDisplay = document.getElementById('infoGroupId');
-      // Truncate ID: first 8 ... last 4
-      const shortId = fullGroup.id.length > 12 ? `${fullGroup.id.substring(0,8)}...${fullGroup.id.substring(fullGroup.id.length-4)}` : fullGroup.id;
 
       idDisplay.innerHTML = `
-        <span class="id-text" title="${fullGroup.id}">${shortId}</span>
+        <span class="id-text" title="${fullGroup.id}">${fullGroup.id}</span>
         <button class="btn-icon-tiny copy-id-btn" title="Copy ID"><i class="fas fa-copy"></i></button>
       `;
       idDisplay.querySelector('.copy-id-btn').onclick = () => {
@@ -1274,7 +1272,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const btn = document.createElement('button');
           btn.className = 'btn btn-primary btn-block';
           btn.innerHTML = '<i class="fas fa-user-plus"></i> Add Member';
-          btn.style.marginBottom = '15px';
+          btn.style.marginTop = '15px';
           btn.onclick = () => openInviteModal(fullGroup);
           actionsContainer.appendChild(btn);
       }
