@@ -12,7 +12,7 @@ const CropperUtils = {
             <div class="modal-content" style="max-width: 500px; width: 95%;">
                 <div class="modal-header">
                     <h3>Crop Image</h3>
-                    <span class="close-modal-cropper">&times;</span>
+                    <span class="close-modal close-modal-cropper">&times;</span>
                 </div>
                 <div style="height: 400px; width: 100%; background: #000; overflow: hidden; display:flex; align-items:center; justify-content:center;">
                     <img id="cropperImage" style="max-width: 100%; max-height: 100%; display: block;">

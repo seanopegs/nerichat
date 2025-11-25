@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const attachmentCaption = document.getElementById('attachmentCaption');
   const sendAttachmentBtn = document.getElementById('sendAttachmentBtn');
   const cancelAttachmentBtn = document.getElementById('cancelAttachmentBtn');
+  const cropAttachmentBtn = document.getElementById('cropAttachmentBtn');
   let pendingFile = null;
 
   // Reply State
@@ -1069,6 +1070,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       attachmentCaption.value = messageInput.value.trim(); // Pre-fill caption if any
 
       if (file.type.startsWith('image/')) {
+          cropAttachmentBtn.style.display = 'inline-block';
           const reader = new FileReader();
           reader.onload = (e) => {
               previewImage.src = e.target.result;
@@ -1077,6 +1079,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           };
           reader.readAsDataURL(file);
       } else {
+          cropAttachmentBtn.style.display = 'none';
           previewImage.style.display = 'none';
           previewFile.style.display = 'block';
           previewFileName.textContent = file.name;
@@ -1086,6 +1089,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Send from Modal
+  cropAttachmentBtn.addEventListener('click', async () => {
+      if (!pendingFile || !pendingFile.type.startsWith('image/')) return;
+      try {
+          const croppedFile = await CropperUtils.cropImage(pendingFile);
+          pendingFile = croppedFile; // Update pending file
+
+          // Update preview
+          const reader = new FileReader();
+          reader.onload = (e) => { previewImage.src = e.target.result; };
+          reader.readAsDataURL(pendingFile);
+
+      } catch (e) { console.log("Cropping cancelled"); }
+  });
+
   sendAttachmentBtn.addEventListener('click', async () => {
       if (!pendingFile) return;
 
@@ -1737,12 +1754,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       chatArea.style.background = '';
       if (e.dataTransfer.files && e.dataTransfer.files[0]) {
           let file = e.dataTransfer.files[0];
-          try {
-             if (file.type.startsWith('image/')) {
-                 file = await CropperUtils.cropImage(file);
-             }
-             sendFile(file);
-          } catch(e) {}
+          sendFile(file);
       }
   });
 
@@ -1754,12 +1766,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const item = items[index];
           if (item.kind === 'file') {
               let blob = item.getAsFile();
-              try {
-                  if (blob.type.startsWith('image/')) {
-                     blob = await CropperUtils.cropImage(blob);
-                  }
-                  sendFile(blob);
-              } catch(e) {}
+              sendFile(blob);
               e.preventDefault();
               return;
           }
@@ -1773,15 +1780,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   fileInput.addEventListener('change', async () => {
       if(fileInput.files && fileInput.files[0]) {
           let file = fileInput.files[0];
-          try {
-             // Crop if image
-             if (file.type.startsWith('image/')) {
-                 file = await CropperUtils.cropImage(file); // Free aspect ratio
-             }
-             sendFile(file);
-          } catch(e) {
-              console.log("Cancelled");
-          }
+          sendFile(file);
           fileInput.value = '';
       }
   });
