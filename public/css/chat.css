@@ -954,3 +954,18 @@ input:checked + .slider:before {
 .modal-footer button {
     width: 100%;
 }
+
+.preview-area {
+  margin-bottom: 20px;
+  max-height: 50vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#previewImage {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+}
