@@ -841,13 +841,16 @@ input:checked + .slider:before {
 
 /* Mobile */
 @media (max-width: 768px) {
-  .app-container { flex-direction: column; }
-  .sidebar { width: 100%; position: absolute; height: 100%; transform: translateX(0); }
-  .chat-area { width: 100%; position: absolute; height: 100%; transform: translateX(100%); transition: transform 0.3s ease; }
+  .app-container { flex-direction: column; height: 100dvh; }
+  .sidebar { width: 100%; position: absolute; height: 100%; transform: translateX(0); z-index: 10; }
+  .chat-area { width: 100%; position: absolute; height: 100%; transform: translateX(100%); transition: transform 0.3s ease; z-index: 20; background: var(--bg-app); }
   .chat-area.active { transform: translateX(0); }
 
   .desktop-only { display: none !important; }
   .mobile-only { display: flex !important; }
+
+  /* Ensure modals are on top */
+  .modal { z-index: 1000; }
 }
 
 .desktop-only { display: flex; }
