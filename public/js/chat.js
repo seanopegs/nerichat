@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if(userStatusIndicator) updateSelfStatusIndicator();
 
   // Cache self
-  userCache[user.username] = { avatar: user.avatar, displayName: user.displayName };
+  userCache[user.username] = { username: user.username, avatar: user.avatar, displayName: user.displayName };
 
   // Verify User Exists (Session Check)
   try {
@@ -465,6 +465,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
       } catch (e) { console.error(e); }
       const fallback = {
+          username: username,
           displayName: username,
           avatar: `https://ui-avatars.com/api/?name=${username}`
       };
