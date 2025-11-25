@@ -664,6 +664,17 @@ input:checked + .slider:before {
     margin-top: 8px;
     border: 1px solid var(--border-color);
     color: var(--text-muted);
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.group-id-pill .id-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    margin-right: 10px;
 }
 
 .edit-avatar-group {
@@ -909,4 +920,14 @@ input:checked + .slider:before {
     font-weight: 700;
     line-height: 1;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.4);
+}
+
+.modal-footer {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+    width: 100%;
+}
+.modal-footer button {
+    width: 100%;
 }
