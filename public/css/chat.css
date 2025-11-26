@@ -625,6 +625,13 @@
     border: 4px solid var(--bg-card);
 }
 
+#infoGroupId {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0; /* Allow shrinking */
+}
+
 .group-id-pill {
     background: var(--bg-input);
     padding: 6px 14px;
@@ -642,7 +649,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1;
 }
 
 .btn-icon-tiny {
