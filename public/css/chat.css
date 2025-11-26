@@ -625,9 +625,16 @@
     border: 4px solid var(--bg-card);
 }
 
+#infoGroupId {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0; /* Allow shrinking */
+}
+
 .group-id-pill {
     background: var(--bg-input);
-    padding: 6px 6px 6px 14px;
+    padding: 6px 14px;
     border-radius: 20px;
     font-family: monospace;
     font-size: 0.9rem;
@@ -635,16 +642,34 @@
     color: var(--text-muted);
     width: 100%;
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 10px;
 }
 .group-id-pill .id-text {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin-right: 10px;
-    flex: 1;
 }
+
+.btn-icon-tiny {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.btn-icon-tiny:hover {
+    background: var(--bg-hover);
+    color: var(--text-main);
+}
+.btn-icon-tiny i { transition: transform 0.2s; }
+.btn-icon-tiny:active i { transform: scale(0.9); }
 
 .edit-avatar-group {
     display: flex;
