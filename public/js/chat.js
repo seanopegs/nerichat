@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  const user = JSON.parse(userStr);
+  let user = JSON.parse(userStr);
   let currentGroup = null;
   let ws;
   let groups = [];
@@ -126,7 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
       }
       if (res.ok) {
-          const remoteUser = await res.json();
+          let remoteUser = await res.json();
           // Update local data with fresh data from server
           user = { ...user, ...remoteUser };
           localStorage.setItem('chatUser', JSON.stringify(user));
@@ -1250,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (oldInviteSection) oldInviteSection.remove();
 
       // Setup dynamic UI
-      const infoContainer = document.querySelector('.group-info-header');
+      const infoContainer = document.querySelector('.group-settings-form');
 
       // Update ID Display with truncation and Copy button
       const idDisplay = document.getElementById('infoGroupId');
@@ -1275,14 +1275,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (invitePerm === 'admin' && (isAdmin || isOwner)) canInvite = true;
 
       // Container for actions (Invite + Owner Toggles)
-      let actionsContainer = document.getElementById('groupActionsContainer');
-      if (!actionsContainer) {
-          actionsContainer = document.createElement('div');
-          actionsContainer.id = 'groupActionsContainer';
-          actionsContainer.className = 'group-actions-container';
-          // Insert after the header info but before members list
-          infoContainer.appendChild(actionsContainer);
-      }
+      const actionsContainer = document.getElementById('groupActionsContainer');
       actionsContainer.innerHTML = '';
 
       if (canInvite && fullGroup.type !== 'dm') {
