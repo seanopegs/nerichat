@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  const user = JSON.parse(userStr);
+  let user = JSON.parse(userStr);
   let currentGroup = null;
   let ws;
   let groups = [];
@@ -681,6 +681,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     div.setAttribute('data-received-by', JSON.stringify(msg.receivedBy || []));
 
     const userInfo = await getUserInfo(msg.user);
+    if (!userInfo.avatar) {
+        userInfo.avatar = `https://ui-avatars.com/api/?name=${userInfo.displayName || userInfo.username}`;
+    }
     const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     let tickHtml = '';
@@ -1245,54 +1248,28 @@ document.addEventListener('DOMContentLoaded', async () => {
           list.appendChild(row);
       }
 
-      // Clean up previous dynamic sections
-      const oldInviteSection = document.getElementById('inviteSection');
-      if (oldInviteSection) oldInviteSection.remove();
-
       // Setup dynamic UI
-      const infoContainer = document.querySelector('.group-info-header');
-
-      // Update ID Display with truncation and Copy button
       const idDisplay = document.getElementById('infoGroupId');
+      const idText = idDisplay.querySelector('.id-text');
+      const copyBtn = idDisplay.querySelector('.copy-id-btn');
 
-      idDisplay.innerHTML = `
-        <span class="id-text" title="${fullGroup.id}">${fullGroup.id}</span>
-        <button class="btn-icon-tiny copy-id-btn" title="Copy ID"><i class="fas fa-copy"></i></button>
-      `;
-      idDisplay.querySelector('.copy-id-btn').onclick = () => {
-          navigator.clipboard.writeText(fullGroup.id);
-          const icon = idDisplay.querySelector('i');
-          icon.className = 'fas fa-check';
-          setTimeout(() => icon.className = 'fas fa-copy', 1500);
-      };
+      if (idText) idText.textContent = fullGroup.id;
+      if (copyBtn) {
+          copyBtn.onclick = () => {
+              navigator.clipboard.writeText(fullGroup.id);
+              const icon = copyBtn.querySelector('i');
+              icon.className = 'fas fa-check';
+              setTimeout(() => { icon.className = 'fas fa-copy'; }, 1500);
+          };
+      }
 
       const isMember = fullGroup.members.includes(user.username);
       const isAdmin = fullGroup.admins && fullGroup.admins.includes(user.username);
       const invitePerm = fullGroup.invite_permission || 'admin';
+      const canInvite = (invitePerm === 'all' && isMember) || (invitePerm === 'admin' && (isOwner || isAdmin));
 
-      let canInvite = false;
-      if (invitePerm === 'all' && isMember) canInvite = true;
-      if (invitePerm === 'admin' && (isAdmin || isOwner)) canInvite = true;
-
-      // Container for actions (Invite + Owner Toggles)
-      let actionsContainer = document.getElementById('groupActionsContainer');
-      if (!actionsContainer) {
-          actionsContainer = document.createElement('div');
-          actionsContainer.id = 'groupActionsContainer';
-          actionsContainer.className = 'group-actions-container';
-          // Insert after the header info but before members list
-          infoContainer.appendChild(actionsContainer);
-      }
-      actionsContainer.innerHTML = '';
-
-      if (canInvite && fullGroup.type !== 'dm') {
-          const btn = document.createElement('button');
-          btn.className = 'btn btn-primary btn-block';
-          btn.innerHTML = '<i class="fas fa-user-plus"></i> Add Member';
-          btn.style.marginTop = '15px';
-          btn.onclick = () => openInviteModal(fullGroup);
-          actionsContainer.appendChild(btn);
-      }
+      const actionsContainer = document.getElementById('groupActionsContainer');
+      actionsContainer.innerHTML = ''; // Clear previous content
 
       if (isOwner && fullGroup.type !== 'dm') {
           const toggleDiv = document.createElement('div');
@@ -1314,6 +1291,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                   body: JSON.stringify({ groupId: fullGroup.id, requester: user.username, invite_permission: newPerm })
               });
           };
+      }
+
+      if (canInvite && fullGroup.type !== 'dm') {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-primary btn-block';
+          btn.id = 'addMemberBtn';
+          btn.innerHTML = '<i class="fas fa-user-plus"></i> Add Member';
+          btn.onclick = () => openInviteModal(fullGroup);
+          actionsContainer.appendChild(btn);
       }
 
       document.getElementById('leaveGroupBtn').onclick = () => leaveGroup(fullGroup.id);

@@ -26,102 +26,102 @@ function initDB() {
 function initSchema() {
     return new Promise((resolve, reject) => {
         db.serialize(() => {
-            try {
-                // Users
-                db.run(`CREATE TABLE IF NOT EXISTS users (
-                    username TEXT PRIMARY KEY,
-                    password TEXT,
-                    display_name TEXT,
-                    avatar TEXT,
-                    theme TEXT DEFAULT 'light',
-                    invisible INTEGER DEFAULT 0,
-                    created_at INTEGER
-                )`);
+            // Users
+            db.run(`CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password TEXT,
+                display_name TEXT,
+                avatar TEXT,
+                theme TEXT DEFAULT 'light',
+                invisible INTEGER DEFAULT 0,
+                created_at INTEGER
+            )`);
 
-                // Groups
-                db.run(`CREATE TABLE IF NOT EXISTS groups (
-                    id TEXT PRIMARY KEY,
-                    name TEXT,
-                    type TEXT,
-                    owner TEXT,
-                    invite_permission TEXT DEFAULT 'admin',
-                    avatar TEXT,
-                    created_at INTEGER,
-                    FOREIGN KEY(owner) REFERENCES users(username)
-                )`);
+            // Groups
+            db.run(`CREATE TABLE IF NOT EXISTS groups (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                type TEXT,
+                owner TEXT,
+                invite_permission TEXT DEFAULT 'admin',
+                avatar TEXT,
+                created_at INTEGER,
+                FOREIGN KEY(owner) REFERENCES users(username)
+            )`);
 
-                // Group Members
-                db.run(`CREATE TABLE IF NOT EXISTS group_members (
-                    group_id TEXT,
-                    username TEXT,
-                    is_admin INTEGER DEFAULT 0,
-                    joined_at INTEGER,
-                    PRIMARY KEY (group_id, username),
-                    FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
-                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
-                )`);
+            // Group Members
+            db.run(`CREATE TABLE IF NOT EXISTS group_members (
+                group_id TEXT,
+                username TEXT,
+                is_admin INTEGER DEFAULT 0,
+                joined_at INTEGER,
+                PRIMARY KEY (group_id, username),
+                FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
+                FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+            )`);
 
-                // Messages
-                db.run(`CREATE TABLE IF NOT EXISTS messages (
-                    id TEXT PRIMARY KEY,
-                    group_id TEXT,
-                    sender_username TEXT,
-                    content TEXT,
-                    type TEXT,
-                    reply_to TEXT,
-                    timestamp INTEGER,
-                    is_edited INTEGER DEFAULT 0,
-                    is_deleted INTEGER DEFAULT 0,
-                    attachment_url TEXT,
-                    attachment_type TEXT,
-                    FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
-                )`);
+            // Messages
+            db.run(`CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                group_id TEXT,
+                sender_username TEXT,
+                content TEXT,
+                type TEXT,
+                reply_to TEXT,
+                timestamp INTEGER,
+                is_edited INTEGER DEFAULT 0,
+                is_deleted INTEGER DEFAULT 0,
+                attachment_url TEXT,
+                attachment_type TEXT,
+                FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
+            )`);
 
-                // Indices for fast message retrieval
-                db.run(`CREATE INDEX IF NOT EXISTS idx_messages_group_timestamp ON messages(group_id, timestamp)`);
+            // Indices for fast message retrieval
+            db.run(`CREATE INDEX IF NOT EXISTS idx_messages_group_timestamp ON messages(group_id, timestamp)`);
 
-                // Message Receipts (Read/Received)
-                db.run(`CREATE TABLE IF NOT EXISTS message_receipts (
-                    message_id TEXT,
-                    username TEXT,
-                    received_at INTEGER,
-                    read_at INTEGER,
-                    PRIMARY KEY (message_id, username),
-                    FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
-                )`);
+            // Message Receipts (Read/Received)
+            db.run(`CREATE TABLE IF NOT EXISTS message_receipts (
+                message_id TEXT,
+                username TEXT,
+                received_at INTEGER,
+                read_at INTEGER,
+                PRIMARY KEY (message_id, username),
+                FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+            )`);
 
-                // Friends / Friend Requests
-                db.run(`CREATE TABLE IF NOT EXISTS friend_requests (
-                    requester TEXT,
-                    target TEXT,
-                    status TEXT, -- 'pending', 'accepted'
-                    timestamp INTEGER,
-                    PRIMARY KEY (requester, target),
-                    FOREIGN KEY(requester) REFERENCES users(username),
-                    FOREIGN KEY(target) REFERENCES users(username)
-                )`);
+            // Friends / Friend Requests
+            db.run(`CREATE TABLE IF NOT EXISTS friend_requests (
+                requester TEXT,
+                target TEXT,
+                status TEXT, -- 'pending', 'accepted'
+                timestamp INTEGER,
+                PRIMARY KEY (requester, target),
+                FOREIGN KEY(requester) REFERENCES users(username),
+                FOREIGN KEY(target) REFERENCES users(username)
+            )`);
 
-                // Muted Members
-                db.run(`CREATE TABLE IF NOT EXISTS muted_members (
-                    group_id TEXT,
-                    username TEXT,
-                    muted_until INTEGER,
-                    PRIMARY KEY (group_id, username),
-                    FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
-                )`);
+            // Muted Members
+            db.run(`CREATE TABLE IF NOT EXISTS muted_members (
+                group_id TEXT,
+                username TEXT,
+                muted_until INTEGER,
+                PRIMARY KEY (group_id, username),
+                FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
+            )`);
 
-                // Pinned Chats
-                db.run(`CREATE TABLE IF NOT EXISTS pinned_chats (
-                    username TEXT,
-                    group_id TEXT,
-                    PRIMARY KEY (username, group_id),
-                    FOREIGN KEY(username) REFERENCES users(username)
-                )`);
-
-                resolve();
-            } catch (err) {
-                reject(err);
-            }
+            // Pinned Chats - The LAST command. Resolve the promise in its callback.
+            db.run(`CREATE TABLE IF NOT EXISTS pinned_chats (
+                username TEXT,
+                group_id TEXT,
+                PRIMARY KEY (username, group_id),
+                FOREIGN KEY(username) REFERENCES users(username)
+            )`, (err) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
         });
     });
 }

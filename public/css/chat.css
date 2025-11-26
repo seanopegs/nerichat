@@ -417,63 +417,6 @@
     animation: fadeIn 0.1s ease;
 }
 
-/* Toggle Switch */
-.switch-container {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 10px 0;
-  cursor: pointer;
-}
-
-.switch {
-  position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 24px;
-}
-
-.switch-container input, .switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.slider {
-  position: relative;
-  cursor: pointer;
-  width: 44px;
-  height: 24px;
-  background-color: var(--bg-input);
-  transition: .4s;
-  border-radius: 34px;
-  border: 1px solid var(--border-color);
-}
-
-.slider:before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 3px;
-  bottom: 2px;
-  background-color: white;
-  transition: .4s;
-  border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-input:checked + .slider {
-  background-color: var(--primary);
-  border-color: var(--primary);
-}
-
-input:checked + .slider:before {
-  transform: translateX(20px);
-}
-
 /* Read Receipts */
 .read-receipt {
     font-size: 0.8rem;
@@ -664,8 +607,15 @@ input:checked + .slider:before {
     flex-direction: column;
     align-items: center;
     padding-bottom: 20px;
+}
+
+.group-settings-form {
+    padding-bottom: 20px;
     border-bottom: 1px solid var(--border-color);
     margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .avatar-wrapper img {
@@ -677,24 +627,24 @@ input:checked + .slider:before {
 
 .group-id-pill {
     background: var(--bg-input);
-    padding: 6px 14px;
+    padding: 6px 6px 6px 14px;
     border-radius: 20px;
     font-family: monospace;
     font-size: 0.9rem;
-    margin-top: 8px;
     border: 1px solid var(--border-color);
     color: var(--text-muted);
     width: 100%;
     display: flex;
-    justify-content: space-between;
+    /* justify-content: space-between; */
     align-items: center;
+    gap: 8px; /* Add gap between elements */
 }
 .group-id-pill .id-text {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1;
-    margin-right: 10px;
+    /* margin-right: 10px; */
+    flex: 1; /* Allow text to take up available space */
 }
 
 .edit-avatar-group {
@@ -719,6 +669,23 @@ input:checked + .slider:before {
     margin-top: 10px;
     display: flex;
     gap: 10px;
+}
+
+.group-actions-container {
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 20px;
+}
+
+.group-actions-container .btn-block {
+    width: 100%;
+}
+
+.setting-toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
 }
 
 .members-list-container {

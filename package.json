@@ -4,12 +4,16 @@
   "description": "Simple live chat with WebSocket",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node tests/verify-group-settings.spec.js"
   },
   "dependencies": {
     "express": "^4.21.2",
     "multer": "^2.0.2",
     "sqlite3": "^5.1.7",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "playwright": "^1.57.0"
   }
 }
