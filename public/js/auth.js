@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   // Check if already logged in
   if (localStorage.getItem('chatUser')) {
-      window.location.href = '/app.html';
+      window.location.href = '/app/';
       return;
   }
 
@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data.success) {
         localStorage.setItem('chatUser', JSON.stringify(data.user));
-        window.location.href = '/app.html';
+        window.location.href = '/app/';
       } else {
         alert(data.error);
       }

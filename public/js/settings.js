@@ -58,13 +58,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           formData.append('file', file);
 
           try {
-              const res = await fetch('/api/upload', {
+              const res = await fetch('/api/upload?type=avatar', {
                   method: 'POST',
                   body: formData
               });
               const data = await res.json();
               if (data.success) {
-                  avatarInput.value = data.url; // Save relative URL
+                  avatarInput.value = data.originalFilename; // Show filename to user
+                  avatarInput.setAttribute('data-real-url', data.url); // Store real URL
                   avatarPreview.src = data.url;
               } else {
                   alert(data.error);
@@ -79,6 +80,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (user.avatar && user.avatar.includes('ui-avatars.com')) {
     avatarInput.value = '';
   } else {
+    // Check if it looks like an uploaded file path to show friendly name (optional, but tricky without storing original name)
+    // For now, just show value. If they re-upload, it will fix.
     avatarInput.value = user.avatar;
   }
 
@@ -90,6 +93,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   saveBtn.addEventListener('click', async () => {
     const displayName = displayNameInput.value;
     let avatar = avatarInput.value.trim();
+
+    // Check for hidden upload URL
+    const realUrl = avatarInput.getAttribute('data-real-url');
+    // If the input value matches the original filename (roughly), use the real URL
+    // Or simpler: if realUrl exists and input value is not empty (user didn't clear it), use realUrl.
+    // But what if user changed text manually?
+    // Let's say: if input value == originalFilename from upload (we didn't store it separately, just in value).
+    // If user types a URL, it won't have data-real-url set (unless they uploaded then typed).
+    // Safest: If data-real-url is set, and input value DOES NOT start with http/https, use data-real-url.
+    // If input value starts with http, they probably pasted a link.
+    // If input value is a path /uploads/, use it.
+
+    if (realUrl && !avatar.startsWith('http') && !avatar.startsWith('/')) {
+         avatar = realUrl;
+    }
+
     const password = passwordInput.value;
     const theme = themeToggle.checked ? 'dark' : 'light';
     const invisible = invisibleToggle.checked;
@@ -150,7 +169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Back
   backBtn.addEventListener('click', () => {
-    window.location.href = '/app.html';
+    window.location.href = '/app/';
   });
 
   // Theme Toggle Live Preview
