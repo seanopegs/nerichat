@@ -7,6 +7,9 @@ const multer = require("multer");
 const fs = require("fs");
 const { initDB, updateSchema, run, get, all } = require("./database");
 const { migrate } = require("./migrate");
+const { migratePasswords } = require("./migrate_passwords");
+const { hashPassword, verifyPassword, createSession, getSessionUser, destroySession, authLimiter, apiLimiter } = require("./security");
+const cookieParser = require("cookie-parser");
 
 const app = express();
 const server = http.createServer(app);
@@ -39,7 +42,23 @@ const wss = new WebSocket.Server({ server });
 
 // Middleware
 app.use(express.json());
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
+
+// --- Security Middleware ---
+
+function requireAuth(req, res, next) {
+    const sessionId = req.cookies.session_id;
+    if (!sessionId) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+    const username = getSessionUser(sessionId);
+    if (!username) {
+        return res.status(401).json({ error: "Session expired" });
+    }
+    req.user = { username }; // Attach user to request
+    next();
+}
 
 // --- Helper Functions ---
 
@@ -138,7 +157,7 @@ app.post("/api/upload", (req, res) => {
 });
 
 // Register
-app.post("/api/register", async (req, res) => {
+app.post("/api/register", authLimiter, async (req, res) => {
   const { username, password, displayName } = req.body;
 
   if (!username || !password) {
@@ -155,9 +174,10 @@ app.post("/api/register", async (req, res) => {
         return res.status(409).json({ error: "Username already exists" });
       }
 
+      const hashedPassword = await hashPassword(password);
       const avatar = "https://ui-avatars.com/api/?name=" + encodeURIComponent(displayName || username);
       await run(`INSERT INTO users (username, password, display_name, avatar, created_at) VALUES (?, ?, ?, ?, ?)`,
-          [username, password, displayName || username, avatar, Date.now()]);
+          [username, hashedPassword, displayName || username, avatar, Date.now()]);
 
       res.json({ success: true, user: { username, displayName: displayName || username } });
   } catch (err) {
@@ -167,13 +187,28 @@ app.post("/api/register", async (req, res) => {
 });
 
 // Login
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", authLimiter, async (req, res) => {
   const { username, password } = req.body;
   try {
       const user = await get(`SELECT * FROM users WHERE username = ?`, [username]);
-      if (!user || user.password !== password) {
+      if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
+
+      const isValid = await verifyPassword(password, user.password);
+      if (!isValid) {
+         return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      // Create Session
+      const { sessionId, expiresAt } = createSession(user.username);
+
+      // Set Cookie (HttpOnly)
+      res.cookie("session_id", sessionId, {
+          httpOnly: true,
+          maxAge: expiresAt - Date.now(),
+          sameSite: "Strict"
+      });
 
       res.json({
         success: true,
@@ -191,8 +226,16 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+// Logout
+app.post("/api/logout", (req, res) => {
+    const sessionId = req.cookies.session_id;
+    if (sessionId) destroySession(sessionId);
+    res.clearCookie("session_id");
+    res.json({ success: true });
+});
+
 // Get User Data
-app.get("/api/user/:username", async (req, res) => {
+app.get("/api/user/:username", requireAuth, async (req, res) => {
   const { username } = req.params;
   if (!/^[a-zA-Z0-9_]+$/.test(username)) return res.status(400).json({ error: "Invalid username" });
 
@@ -202,8 +245,11 @@ app.get("/api/user/:username", async (req, res) => {
 
       user.invisible = !!user.invisible;
 
-      const pinned = await all(`SELECT group_id FROM pinned_chats WHERE username = ?`, [username]);
-      user.pinned_chats = pinned.map(p => p.group_id);
+      // Only show private data like pinned chats if requesting own profile
+      if (req.user.username === username) {
+          const pinned = await all(`SELECT group_id FROM pinned_chats WHERE username = ?`, [username]);
+          user.pinned_chats = pinned.map(p => p.group_id);
+      }
 
       res.json(user);
   } catch (err) {
@@ -213,7 +259,7 @@ app.get("/api/user/:username", async (req, res) => {
 });
 
 // Search Users
-app.get("/api/users/search", async (req, res) => {
+app.get("/api/users/search", requireAuth, async (req, res) => {
   const { query } = req.query;
   if (!query) return res.json({ users: [] });
 
@@ -231,8 +277,9 @@ app.get("/api/users/search", async (req, res) => {
 });
 
 // Update Settings
-app.post("/api/user/settings", async (req, res) => {
-  const { username, displayName, avatar, theme, password, invisible } = req.body;
+app.post("/api/user/settings", requireAuth, async (req, res) => {
+  const { displayName, avatar, theme, password, invisible } = req.body;
+  const username = req.user.username; // SECURE: Get from session
 
   try {
       const user = await get(`SELECT * FROM users WHERE username = ?`, [username]);
@@ -250,7 +297,12 @@ app.post("/api/user/settings", async (req, res) => {
           updates.push("avatar = ?"); params.push(newAvatar);
       }
       if (theme) { updates.push("theme = ?"); params.push(theme); }
-      if (password) { updates.push("password = ?"); params.push(password); }
+
+      if (password) {
+          const hashedPassword = await hashPassword(password);
+          updates.push("password = ?");
+          params.push(hashedPassword);
+      }
 
       let statusChanged = false;
       if (invisible !== undefined) {
@@ -272,10 +324,6 @@ app.post("/api/user/settings", async (req, res) => {
       updatedUser.invisible = !!updatedUser.invisible;
 
       // Broadcast Profile Update (to friends)
-      // For now broadcast to all relevant users could be expensive, so let's do broadcast to all for now or optimize
-      // We need to notify friends that this user updated their profile (name/avatar)
-      // Also status update
-
       if (statusChanged) {
           const ws = clients.get(username);
           const isOnline = ws && ws.readyState === WebSocket.OPEN;
@@ -297,7 +345,6 @@ app.post("/api/user/settings", async (req, res) => {
       };
 
       friendNames.forEach(f => sendToUser(f, profileUpdateMsg));
-      // Also send to self to confirm? No, response is enough.
 
       res.json({ success: true, user: updatedUser });
   } catch (err) {
@@ -307,8 +354,10 @@ app.post("/api/user/settings", async (req, res) => {
 });
 
 // Pin Chat
-app.post("/api/user/pin", async (req, res) => {
-    const { username, groupId, action } = req.body;
+app.post("/api/user/pin", requireAuth, async (req, res) => {
+    const { groupId, action } = req.body;
+    const username = req.user.username; // SECURE
+
     try {
         if (action === 'pin') {
             const count = await get(`SELECT count(*) as c FROM pinned_chats WHERE username = ?`, [username]);
@@ -328,8 +377,10 @@ app.post("/api/user/pin", async (req, res) => {
     }
 });
 
-app.post("/api/groups/settings", async (req, res) => {
-    const { groupId, requester, avatar, invite_permission, name } = req.body;
+app.post("/api/groups/settings", requireAuth, async (req, res) => {
+    const { groupId, avatar, invite_permission, name } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
         if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner" });
@@ -365,8 +416,10 @@ app.post("/api/groups/settings", async (req, res) => {
     }
 });
 
-app.post("/api/groups/reset-id", async (req, res) => {
-    const { groupId, requester } = req.body;
+app.post("/api/groups/reset-id", requireAuth, async (req, res) => {
+    const { groupId } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
         if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner" });
@@ -423,8 +476,10 @@ app.post("/api/groups/reset-id", async (req, res) => {
 
 // --- Friend Routes ---
 
-app.get("/api/friends", async (req, res) => {
-    const { username } = req.query;
+app.get("/api/friends", requireAuth, async (req, res) => {
+    // const { username } = req.query; // INSECURE
+    const username = req.user.username; // SECURE
+
     try {
         // Friends (Accepted)
         // stored as (A, B, accepted) means A is friend of B. But we should check both directions.
@@ -459,8 +514,11 @@ app.get("/api/friends", async (req, res) => {
     }
 });
 
-app.post("/api/friends/request", async (req, res) => {
-    const { from, to } = req.body;
+app.post("/api/friends/request", requireAuth, async (req, res) => {
+    // const { from, to } = req.body;
+    const from = req.user.username; // SECURE
+    const { to } = req.body;
+
     if (from === to) return res.status(400).json({ error: "Cannot add yourself" });
 
     try {
@@ -495,8 +553,9 @@ app.post("/api/friends/request", async (req, res) => {
     }
 });
 
-app.post("/api/friends/respond", async (req, res) => {
-    const { user, from, action } = req.body; // user is me, from is the requester
+app.post("/api/friends/respond", requireAuth, async (req, res) => {
+    const { from, action } = req.body; // user is me, from is the requester
+    const user = req.user.username; // SECURE
 
     try {
         if (action === 'accept') {
@@ -522,8 +581,10 @@ app.post("/api/friends/respond", async (req, res) => {
     }
 });
 
-app.post("/api/friends/remove", async (req, res) => {
-    const { user, target } = req.body;
+app.post("/api/friends/remove", requireAuth, async (req, res) => {
+    const { target } = req.body;
+    const user = req.user.username; // SECURE
+
     try {
         await run(`DELETE FROM friend_requests WHERE (requester = ? AND target = ?) OR (requester = ? AND target = ?)`,
             [user, target, target, user]);
@@ -541,8 +602,10 @@ app.post("/api/friends/remove", async (req, res) => {
 
 // --- Group Routes ---
 
-app.post("/api/groups", async (req, res) => {
-  const { name, creator, members, type } = req.body;
+app.post("/api/groups", requireAuth, async (req, res) => {
+  const { name, members, type } = req.body;
+  const creator = req.user.username; // SECURE
+
   if (!creator) return res.status(400).json({ error: "Creator required" });
 
   try {
@@ -601,8 +664,10 @@ app.post("/api/groups", async (req, res) => {
   }
 });
 
-app.post("/api/groups/join", async (req, res) => {
-  const { groupId, username } = req.body;
+app.post("/api/groups/join", requireAuth, async (req, res) => {
+  const { groupId } = req.body;
+  const username = req.user.username; // SECURE
+
   try {
       const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
       if (!group) return res.status(404).json({ error: "Group not found" });
@@ -625,8 +690,10 @@ app.post("/api/groups/join", async (req, res) => {
   }
 });
 
-app.post("/api/groups/invite", async (req, res) => {
-    const { groupId, requester, target } = req.body;
+app.post("/api/groups/invite", requireAuth, async (req, res) => {
+    const { groupId, target } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
         if (!group) return res.status(404).json({ error: "Group not found" });
@@ -668,8 +735,10 @@ app.post("/api/groups/invite", async (req, res) => {
     }
 });
 
-app.post("/api/groups/mute", async (req, res) => {
-    const { groupId, requester, target, duration } = req.body;
+app.post("/api/groups/mute", requireAuth, async (req, res) => {
+    const { groupId, target, duration } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
         const reqMem = await get(`SELECT * FROM group_members WHERE group_id = ? AND username = ?`, [groupId, requester]);
@@ -702,8 +771,10 @@ app.post("/api/groups/mute", async (req, res) => {
     }
 });
 
-app.post("/api/groups/unmute", async (req, res) => {
-    const { groupId, requester, target } = req.body;
+app.post("/api/groups/unmute", requireAuth, async (req, res) => {
+    const { groupId, target } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         // Simple permission check omitted for brevity, assume similar to mute
         await run(`DELETE FROM muted_members WHERE group_id = ? AND username = ?`, [groupId, target]);
@@ -715,8 +786,10 @@ app.post("/api/groups/unmute", async (req, res) => {
     }
 });
 
-app.post("/api/groups/leave", async (req, res) => {
-    const { groupId, username } = req.body;
+app.post("/api/groups/leave", requireAuth, async (req, res) => {
+    const { groupId } = req.body;
+    const username = req.user.username; // SECURE
+
     try {
         await run(`DELETE FROM group_members WHERE group_id = ? AND username = ?`, [groupId, username]);
         // Also remove admin role implicitly handled by table
@@ -731,8 +804,10 @@ app.post("/api/groups/leave", async (req, res) => {
     }
 });
 
-app.post("/api/groups/kick", async (req, res) => {
-    const { groupId, requester, target } = req.body;
+app.post("/api/groups/kick", requireAuth, async (req, res) => {
+    const { groupId, target } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
         const reqMem = await get(`SELECT * FROM group_members WHERE group_id = ? AND username = ?`, [groupId, requester]);
@@ -759,8 +834,10 @@ function isOwnerOrAdmin(group, member) {
 
 // Promote/Demote/Delete/Reset-ID ... (Implementing simplified versions for brevity but retaining logic)
 
-app.post("/api/groups/promote", async (req, res) => {
-    const { groupId, requester, target } = req.body;
+app.post("/api/groups/promote", requireAuth, async (req, res) => {
+    const { groupId, target } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
         if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner can promote" });
@@ -774,8 +851,10 @@ app.post("/api/groups/promote", async (req, res) => {
     }
 });
 
-app.post("/api/groups/demote", async (req, res) => {
-    const { groupId, requester, target } = req.body;
+app.post("/api/groups/demote", requireAuth, async (req, res) => {
+    const { groupId, target } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
         if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner can demote" });
@@ -789,8 +868,10 @@ app.post("/api/groups/demote", async (req, res) => {
     }
 });
 
-app.post("/api/groups/delete", async (req, res) => {
-    const { groupId, requester } = req.body;
+app.post("/api/groups/delete", requireAuth, async (req, res) => {
+    const { groupId } = req.body;
+    const requester = req.user.username; // SECURE
+
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [groupId]);
         if (!group || group.owner !== requester) return res.status(403).json({ error: "Only owner" });
@@ -808,8 +889,10 @@ app.post("/api/groups/delete", async (req, res) => {
     }
 });
 
-app.get("/api/my-groups", async (req, res) => {
-  const { username } = req.query;
+app.get("/api/my-groups", requireAuth, async (req, res) => {
+  // const { username } = req.query; // INSECURE
+  const username = req.user.username; // SECURE
+
   try {
       const members = await all(`SELECT group_id FROM group_members WHERE username = ?`, [username]);
 
@@ -847,10 +930,17 @@ app.get("/api/my-groups", async (req, res) => {
   }
 });
 
-app.get("/api/groups/:id", async (req, res) => {
+app.get("/api/groups/:id", requireAuth, async (req, res) => {
+    const username = req.user.username;
     try {
         const group = await get(`SELECT * FROM groups WHERE id = ?`, [req.params.id]);
         if (!group) return res.status(404).json({ error: "Not found" });
+
+        // Access Control: Must be member
+        const membership = await get(`SELECT * FROM group_members WHERE group_id = ? AND username = ?`, [group.id, username]);
+        if (!membership) {
+            return res.status(403).json({ error: "Access denied" });
+        }
 
         const members = await all(`SELECT username FROM group_members WHERE group_id = ?`, [group.id]);
         const admins = await all(`SELECT username FROM group_members WHERE group_id = ? AND is_admin = 1`, [group.id]);
@@ -904,40 +994,73 @@ app.get("/api/groups/:id", async (req, res) => {
 
 // --- WebSocket Logic ---
 
-wss.on("connection", (ws) => {
+function parseCookies(request) {
+    const list = {};
+    const rc = request.headers.cookie;
+
+    rc && rc.split(';').forEach(function(cookie) {
+        const parts = cookie.split('=');
+        list[parts.shift().trim()] = decodeURI(parts.join('='));
+    });
+
+    return list;
+}
+
+wss.on("connection", async (ws, req) => {
   let currentUser = null;
+
+  // Authenticate Connection
+  const cookies = parseCookies(req);
+  if (cookies.session_id) {
+      const username = getSessionUser(cookies.session_id);
+      if (username) {
+          currentUser = username;
+          clients.set(currentUser, ws);
+          console.log(`WS: User ${currentUser} connected (Secure)`);
+
+          const user = await get(`SELECT invisible FROM users WHERE username = ?`, [currentUser]);
+          ws.isInvisible = user ? !!user.invisible : false;
+
+          if (!ws.isInvisible) {
+              broadcastStatusUpdate(currentUser, 'online');
+          }
+
+          // Send status of currently connected users to the new user
+          clients.forEach((clientWs, clientUsername) => {
+              if (clientUsername === currentUser) return;
+              if (clientWs.readyState === WebSocket.OPEN && !clientWs.isInvisible) {
+                  ws.send(JSON.stringify({
+                      type: 'status_update',
+                      username: clientUsername,
+                      status: 'online'
+                  }));
+              }
+          });
+      } else {
+          ws.close();
+          return;
+      }
+  } else {
+      ws.close();
+      return;
+  }
 
   ws.on("message", async (message) => {
     try {
       const data = JSON.parse(message);
+      const user = currentUser; // Enforce server-side user
 
-      if (data.type === "auth") {
-        currentUser = data.username;
-        clients.set(currentUser, ws);
-        console.log(`WS: User ${currentUser} connected`);
+      if (data.type === "message") {
+        const { groupId, text, replyTo, attachmentUrl, attachmentType, originalFilename } = data;
+        // const user = data.user; // REMOVED - IDOR Fix
+        if (!groupId || (!text && !attachmentUrl)) return;
 
-        const user = await get(`SELECT invisible FROM users WHERE username = ?`, [currentUser]);
-        ws.isInvisible = user ? !!user.invisible : false;
-
-        if (!ws.isInvisible) {
-            broadcastStatusUpdate(currentUser, 'online');
+        // Check Membership?
+        const member = await get("SELECT username FROM group_members WHERE group_id = ? AND username = ?", [groupId, user]);
+        if (!member) {
+             ws.send(JSON.stringify({ type: 'error', message: 'Not a member of this group' }));
+             return;
         }
-
-        // Send status of currently connected users to the new user
-        clients.forEach((clientWs, clientUsername) => {
-            if (clientUsername === currentUser) return;
-            if (clientWs.readyState === WebSocket.OPEN && !clientWs.isInvisible) {
-                ws.send(JSON.stringify({
-                    type: 'status_update',
-                    username: clientUsername,
-                    status: 'online'
-                }));
-            }
-        });
-      }
-      else if (data.type === "message") {
-        const { groupId, text, user, replyTo, attachmentUrl, attachmentType, originalFilename } = data;
-        if (!groupId || (!text && !attachmentUrl) || !user) return;
 
         // Check Mute
         const muted = await get(`SELECT muted_until FROM muted_members WHERE group_id = ? AND username = ?`, [groupId, user]);
@@ -987,7 +1110,9 @@ wss.on("connection", (ws) => {
         });
       }
       else if (data.type === "edit_message") {
-          const { messageId, text, user, groupId } = data;
+          const { messageId, text, groupId } = data;
+          const user = currentUser; // SECURE
+
           // Check existence
           const msg = await get(`SELECT * FROM messages WHERE id = ?`, [messageId]);
           if (!msg) return;
@@ -1019,7 +1144,9 @@ wss.on("connection", (ws) => {
           });
       }
       else if (data.type === "delete_message") {
-          const { messageId, user, groupId } = data;
+          const { messageId, groupId } = data;
+          const user = currentUser; // SECURE
+
            // Check existence
           const msg = await get(`SELECT * FROM messages WHERE id = ?`, [messageId]);
           if (!msg) return;
@@ -1045,7 +1172,9 @@ wss.on("connection", (ws) => {
           });
       }
       else if (data.type === "received_message") {
-          const { groupId, user, messageId } = data;
+          const { groupId, messageId } = data;
+          const user = currentUser; // SECURE
+
           await run(`INSERT OR IGNORE INTO message_receipts (message_id, username, received_at) VALUES (?, ?, ?)`,
               [messageId, user, Date.now()]);
 
@@ -1058,7 +1187,8 @@ wss.on("connection", (ws) => {
           });
       }
       else if (data.type === "read_message") {
-        const { groupId, user } = data;
+        const { groupId } = data;
+        const user = currentUser; // SECURE
 
         // Mark all messages in group as read by user? Or specific?
         // Usually "read_message" event means "I opened the chat".
@@ -1117,6 +1247,7 @@ const PORT = process.env.PORT || 25577;
 initDB()
     .then(() => migrate())
     .then(() => updateSchema())
+    .then(() => migratePasswords())
     .then(() => {
         server.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);

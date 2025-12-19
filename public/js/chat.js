@@ -158,7 +158,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     ws = new WebSocket(protocol + location.host);
 
     ws.addEventListener('open', () => {
-      ws.send(JSON.stringify({ type: 'auth', username: user.username }));
+      // Auth is now handled by cookie automatically
+      // ws.send(JSON.stringify({ type: 'auth', username: user.username }));
+    });
+
+    ws.addEventListener('close', () => {
+        // console.log("WS Closed");
+        // Optional: Reconnect logic is already below
     });
 
     ws.addEventListener('message', async (event) => {
@@ -172,8 +178,8 @@ document.addEventListener('DOMContentLoaded', async () => {
            if (data.message.user !== user.username) {
                ws.send(JSON.stringify({
                    type: 'read_message',
-                   groupId: currentGroup.id,
-                   user: user.username
+                   groupId: currentGroup.id
+                   // user: user.username // REMOVED
                }));
            }
            await appendMessage(data.message);
@@ -181,7 +187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ws.send(JSON.stringify({
                type: 'received_message',
                groupId: data.groupId,
-               user: user.username,
+               // user: user.username, // REMOVED
                messageId: data.message.id
            }));
             const gIndex = groups.findIndex(g => g.id === data.groupId);
@@ -526,7 +532,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           iconHtml = `<img src="${group.avatar}" style="width:36px;height:36px;border-radius:50%; margin-right: 5px;">`;
       }
 
-      div.innerHTML = `${pinIcon}${iconHtml} ${group.name} ${badge}`;
+      div.innerHTML = `${pinIcon}${iconHtml} <span class="group-name"></span> ${badge}`;
+      div.querySelector('.group-name').textContent = group.name;
       div.onclick = () => switchGroup(group);
 
       div.addEventListener('contextmenu', (e) => {
@@ -654,8 +661,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         ws.send(JSON.stringify({
             type: 'read_message',
-            groupId: group.id,
-            user: user.username
+            groupId: group.id
+            // user: user.username // REMOVED
         }));
       }
     } catch (err) {
@@ -667,7 +674,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (msg.type === 'system') {
         const div = document.createElement('div');
         div.className = 'message system-message';
-        div.innerHTML = `<small style="color:var(--text-muted); display:block; text-align:center; margin: 10px 0;">${msg.text}</small>`;
+        const small = document.createElement('small');
+        small.style.cssText = "color:var(--text-muted); display:block; text-align:center; margin: 10px 0;";
+        small.textContent = msg.text;
+        div.appendChild(small);
         messagesContainer.appendChild(div);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         return;
@@ -746,8 +756,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         replyHtml = `<div class="reply-quote" data-reply-id="${msg.replyTo.id}">
              ${hasThumb ? `<img src="${msg.replyTo.attachmentUrl}" class="reply-thumbnail">` : ''}
              <div style="overflow:hidden; flex:1;">
-                 <div style="font-weight:bold; color:var(--primary); font-size:0.8rem;">${msg.replyTo.userDisplayName || 'User'}</div>
-                 <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:0.8;">${msg.replyTo.text || (msg.replyTo.attachmentUrl ? 'Attachment' : 'Message')}</div>
+                 <div class="reply-user" style="font-weight:bold; color:var(--primary); font-size:0.8rem;"></div>
+                 <div class="reply-text" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:0.8;"></div>
              </div>
         </div>`;
     }
@@ -757,12 +767,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="message-content" data-id="${msg.id}" title="Long press or Right click for options">
         ${replyHtml}
         <div class="message-header">
-          <span style="font-weight:600">${userInfo.displayName}</span>
+          <span class="msg-sender" style="font-weight:600"></span>
           <span>${time}</span>
         </div>
         <div class="message-text">${contentHtml}</div>
       </div>
     `;
+
+    // Safe Text Insertion (XSS Fix)
+    div.querySelector('.msg-sender').textContent = userInfo.displayName;
+    if (replyHtml) {
+        div.querySelector('.reply-user').textContent = msg.replyTo.userDisplayName || 'User';
+        div.querySelector('.reply-text').textContent = msg.replyTo.text || (msg.replyTo.attachmentUrl ? 'Attachment' : 'Message');
+    }
 
     // Set text content safely if exists and not deleted
     if (!msg.is_deleted && msg.text) {
@@ -961,8 +978,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                    type: 'edit_message',
                                    groupId: currentGroup.id,
                                    messageId: msg.id,
-                                   text: newText,
-                                   user: user.username
+                                   text: newText
+                                   // user: user.username // REMOVED
                                }));
                            }
                            editDiv.remove();
@@ -983,8 +1000,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                    ws.send(JSON.stringify({
                        type: 'delete_message',
                        groupId: currentGroup.id,
-                       messageId: msg.id,
-                       user: user.username
+                       messageId: msg.id
+                       // user: user.username // REMOVED
                    }));
               }
           }, true));
@@ -1047,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       type: 'message',
       groupId: currentGroup.id,
       text: text,
-      user: user.username,
+      // user: user.username, // REMOVED - IDOR Fix
       replyTo: replyToMessage
     };
 
@@ -1121,7 +1138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                   type: 'message',
                   groupId: currentGroup.id,
                   text: attachmentCaption.value.trim(),
-                  user: user.username,
+                  // user: user.username, // REMOVED - IDOR Fix
                   replyTo: replyToMessage,
                   attachmentUrl: data.url,
                   attachmentType: data.type,
@@ -1594,9 +1611,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <img src="${friend.avatar}" style="width:36px;height:36px;border-radius:50%">
                 <span class="status-indicator ${statusClass}"></span>
             </div>
-            <span>${friend.displayName}</span>
+            <span class="friend-name"></span>
             ${badge}
           `;
+          div.querySelector('.friend-name').textContent = friend.displayName;
           div.onclick = () => startDM(friend);
 
           div.addEventListener('contextmenu', (e) => {
@@ -1904,11 +1922,13 @@ document.addEventListener('DOMContentLoaded', async () => {
               div.innerHTML = `
                 <img src="${u.avatar}">
                 <div style="flex:1">
-                    <div style="font-weight:bold">${u.displayName}</div>
-                    <div style="font-size:0.8rem">@${u.username}</div>
+                    <div class="search-name" style="font-weight:bold"></div>
+                    <div class="search-user" style="font-size:0.8rem"></div>
                 </div>
                 <button class="btn btn-sm btn-primary" style="width:auto;">Add</button>
               `;
+              div.querySelector('.search-name').textContent = u.displayName;
+              div.querySelector('.search-user').textContent = '@' + u.username;
               div.querySelector('button').onclick = async () => {
                   const r = await fetch('/api/friends/request', {
                       method: 'POST',
