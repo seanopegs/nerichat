@@ -1971,7 +1971,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.querySelector('.user-profile').addEventListener('click', () => {
-    window.location.href = '/settings.html';
+    window.location.href = '/settings/';
   });
 
   // Lightbox Logic

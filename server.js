@@ -10,9 +10,28 @@ const { migrate } = require("./migrate");
 const { migratePasswords } = require("./migrate_passwords");
 const { hashPassword, verifyPassword, createSession, getSessionUser, destroySession, authLimiter, apiLimiter } = require("./security");
 const cookieParser = require("cookie-parser");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 const server = http.createServer(app);
+
+// Trust Proxy for Pterodactyl/Nginx
+app.set('trust proxy', 1);
+
+// Helmet Security Headers
+app.use(helmet({
+    contentSecurityPolicy: false, // Disable CSP to allow inline scripts/styles for now as the app uses them heavily
+}));
+
+// Global Rate Limit for API
+const globalApiLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	max: 500, // Limit each IP to 500 requests per windowMs
+	standardHeaders: true,
+	legacyHeaders: false,
+});
+app.use('/api/', globalApiLimiter);
 
 // Configure Multer for file uploads
 const storage = multer.diskStorage({
@@ -33,8 +52,23 @@ const upload = multer({
     storage: storage,
     limits: { fileSize: 1024 * 1024 }, // 1MB limit
     fileFilter: (req, file, cb) => {
-        // Accept images and generic files.
-        // The requirement says "kirim gambar / file" (send image / file)
+        const ext = path.extname(file.originalname).toLowerCase();
+        // Strict reject dangerous extensions
+        if (['.html', '.htm', '.php', '.js', '.exe', '.sh', '.bat', '.cmd'].includes(ext)) {
+            return cb(new Error('File type not allowed'), false);
+        }
+
+        // If specific check needed for avatar (passed via query param? Multer runs before req.query is fully populated in some setups but let's try)
+        // Actually req.query is available if using 'upload.single' middleware inside the route handler, but here 'upload' is defined globally.
+        // We will handle specific strict image checks in the route handler or by checking req.query inside fileFilter if possible.
+        // req is passed to fileFilter.
+
+        if (req.query.type === 'avatar') {
+             if (!file.mimetype.startsWith('image/')) {
+                 return cb(new Error('Only images allowed for avatar'), false);
+             }
+        }
+
         cb(null, true);
     }
 });
