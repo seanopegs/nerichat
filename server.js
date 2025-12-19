@@ -8,10 +8,12 @@ const fs = require("fs");
 const { initDB, updateSchema, run, get, all } = require("./database");
 const { migrate } = require("./migrate");
 const { migratePasswords } = require("./migrate_passwords");
+const { migrateSecurity } = require("./migrate_security");
 const { hashPassword, verifyPassword, createSession, getSessionUser, destroySession, authLimiter, apiLimiter } = require("./security");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const xss = require("xss");
 
 const app = express();
 const server = http.createServer(app);
@@ -22,6 +24,7 @@ app.set('trust proxy', 1);
 // Helmet Security Headers
 app.use(helmet({
     contentSecurityPolicy: false, // Disable CSP to allow inline scripts/styles for now as the app uses them heavily
+    crossOriginResourcePolicy: { policy: "cross-origin" } // Allow images to be loaded from other origins if needed, but mainly for consistent behavior
 }));
 
 // Global Rate Limit for API
@@ -52,21 +55,17 @@ const upload = multer({
     storage: storage,
     limits: { fileSize: 1024 * 1024 }, // 1MB limit
     fileFilter: (req, file, cb) => {
+        // Strict Allowlist for extensions
+        const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
         const ext = path.extname(file.originalname).toLowerCase();
-        // Strict reject dangerous extensions
-        if (['.html', '.htm', '.php', '.js', '.exe', '.sh', '.bat', '.cmd'].includes(ext)) {
-            return cb(new Error('File type not allowed'), false);
+
+        if (!allowedExtensions.includes(ext)) {
+            return cb(new Error('Only image files are allowed (.jpg, .jpeg, .png, .gif, .webp)'), false);
         }
 
-        // If specific check needed for avatar (passed via query param? Multer runs before req.query is fully populated in some setups but let's try)
-        // Actually req.query is available if using 'upload.single' middleware inside the route handler, but here 'upload' is defined globally.
-        // We will handle specific strict image checks in the route handler or by checking req.query inside fileFilter if possible.
-        // req is passed to fileFilter.
-
-        if (req.query.type === 'avatar') {
-             if (!file.mimetype.startsWith('image/')) {
-                 return cb(new Error('Only images allowed for avatar'), false);
-             }
+        // Mime check
+        if (!file.mimetype.startsWith('image/')) {
+             return cb(new Error('Only image files are allowed'), false);
         }
 
         cb(null, true);
@@ -161,7 +160,7 @@ function broadcastStatusUpdate(username, status) {
 
 // Upload File
 app.post("/api/upload", (req, res) => {
-    upload.single('file')(req, res, function (err) {
+    upload.single('file')(req, res, async function (err) {
         if (err instanceof multer.MulterError) {
             if (err.code === 'LIMIT_FILE_SIZE') {
                 return res.status(400).json({ error: "File size exceeds 1MB limit." });
@@ -174,6 +173,26 @@ app.post("/api/upload", (req, res) => {
         if (!req.file) {
             return res.status(400).json({ error: "No file uploaded." });
         }
+
+        // --- Security Check using file-type ---
+        try {
+            // Dynamically import file-type (ESM)
+            const { fileTypeFromBuffer } = await import('file-type');
+            const fileBuffer = fs.readFileSync(req.file.path);
+            const type = await fileTypeFromBuffer(fileBuffer);
+
+            if (!type || !['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(type.mime)) {
+                // Delete invalid file
+                fs.unlinkSync(req.file.path);
+                return res.status(400).json({ error: "Invalid file content. Must be a valid image." });
+            }
+        } catch (e) {
+            // If checking fails, delete to be safe
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            console.error("File type verification failed:", e);
+            return res.status(500).json({ error: "File verification failed" });
+        }
+        // --------------------------------------
 
         // Return relative path
         const fileUrl = `/uploads/${req.file.filename}`;
@@ -202,6 +221,9 @@ app.post("/api/register", authLimiter, async (req, res) => {
     return res.status(400).json({ error: "Username must be alphanumeric" });
   }
 
+  // Sanitize Display Name
+  const safeDisplayName = xss(displayName || username);
+
   try {
       const existing = await get(`SELECT username FROM users WHERE username = ?`, [username]);
       if (existing) {
@@ -209,11 +231,11 @@ app.post("/api/register", authLimiter, async (req, res) => {
       }
 
       const hashedPassword = await hashPassword(password);
-      const avatar = "https://ui-avatars.com/api/?name=" + encodeURIComponent(displayName || username);
+      const avatar = "https://ui-avatars.com/api/?name=" + encodeURIComponent(safeDisplayName);
       await run(`INSERT INTO users (username, password, display_name, avatar, created_at) VALUES (?, ?, ?, ?, ?)`,
-          [username, hashedPassword, displayName || username, avatar, Date.now()]);
+          [username, hashedPassword, safeDisplayName, avatar, Date.now()]);
 
-      res.json({ success: true, user: { username, displayName: displayName || username } });
+      res.json({ success: true, user: { username, displayName: safeDisplayName } });
   } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Failed to create user" });
@@ -274,7 +296,7 @@ app.get("/api/user/:username", requireAuth, async (req, res) => {
   if (!/^[a-zA-Z0-9_]+$/.test(username)) return res.status(400).json({ error: "Invalid username" });
 
   try {
-      const user = await get(`SELECT username, display_name as displayName, avatar, theme, invisible FROM users WHERE username = ?`, [username]);
+      const user = await get(`SELECT username, display_name as displayName, avatar, avatar_original_name as avatarOriginalName, theme, invisible FROM users WHERE username = ?`, [username]);
       if (!user) return res.status(404).json({ error: "User not found" });
 
       user.invisible = !!user.invisible;
@@ -312,7 +334,7 @@ app.get("/api/users/search", requireAuth, async (req, res) => {
 
 // Update Settings
 app.post("/api/user/settings", requireAuth, async (req, res) => {
-  const { displayName, avatar, theme, password, invisible } = req.body;
+  const { displayName, avatar, avatarOriginalName, theme, password, invisible } = req.body;
   const username = req.user.username; // SECURE: Get from session
 
   try {
@@ -322,14 +344,33 @@ app.post("/api/user/settings", requireAuth, async (req, res) => {
       const updates = [];
       const params = [];
 
-      if (displayName) { updates.push("display_name = ?"); params.push(displayName); }
+      // Sanitization
+      if (displayName) {
+          updates.push("display_name = ?");
+          params.push(xss(displayName));
+      }
+
       if (avatar !== undefined) {
           let newAvatar = avatar;
-          if (newAvatar === "") {
-              newAvatar = "https://ui-avatars.com/api/?name=" + encodeURIComponent(displayName || user.display_name);
+          // Security: If avatar is a local path (starts with /), ensure it is in /uploads/
+          // and contains valid characters to prevent traversal (though unlikely with strict equality).
+          // Assuming uploaded files are always /uploads/filename.ext
+          if (newAvatar && newAvatar.startsWith('/') && !newAvatar.startsWith('/uploads/')) {
+               // Reject or ignore invalid paths? Let's ignore.
+          } else {
+             if (newAvatar === "") {
+                newAvatar = "https://ui-avatars.com/api/?name=" + encodeURIComponent(displayName || user.display_name);
+             }
+             updates.push("avatar = ?");
+             params.push(newAvatar);
           }
-          updates.push("avatar = ?"); params.push(newAvatar);
       }
+
+      if (avatarOriginalName !== undefined) {
+          updates.push("avatar_original_name = ?");
+          params.push(xss(avatarOriginalName));
+      }
+
       if (theme) { updates.push("theme = ?"); params.push(theme); }
 
       if (password) {
@@ -354,7 +395,7 @@ app.post("/api/user/settings", requireAuth, async (req, res) => {
       }
 
       // Fetch updated user
-      const updatedUser = await get(`SELECT username, display_name as displayName, avatar, theme, invisible FROM users WHERE username = ?`, [username]);
+      const updatedUser = await get(`SELECT username, display_name as displayName, avatar, avatar_original_name as avatarOriginalName, theme, invisible FROM users WHERE username = ?`, [username]);
       updatedUser.invisible = !!updatedUser.invisible;
 
       // Broadcast Profile Update (to friends)
@@ -640,6 +681,9 @@ app.post("/api/groups", requireAuth, async (req, res) => {
   const { name, members, type } = req.body;
   const creator = req.user.username; // SECURE
 
+  // Sanitize group name
+  const safeName = xss(name || "Group");
+
   if (!creator) return res.status(400).json({ error: "Creator required" });
 
   try {
@@ -669,10 +713,10 @@ app.post("/api/groups", requireAuth, async (req, res) => {
       if (members) initialMembers.push(...members);
       const uniqueMembers = [...new Set(initialMembers)];
 
-      const avatar = "https://ui-avatars.com/api/?name=" + encodeURIComponent(name || "Group");
+      const avatar = "https://ui-avatars.com/api/?name=" + encodeURIComponent(safeName);
 
       await run(`INSERT INTO groups (id, name, type, owner, invite_permission, avatar, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [groupId, name || "Group", type || "group", creator, 'admin', avatar, Date.now()]);
+          [groupId, safeName, type || "group", creator, 'admin', avatar, Date.now()]);
 
       for (const m of uniqueMembers) {
           await run(`INSERT INTO group_members (group_id, username, is_admin, joined_at) VALUES (?, ?, ?, ?)`,
@@ -1115,10 +1159,13 @@ wss.on("connection", async (ws, req) => {
 
         const type = attachmentUrl ? attachmentType : 'text';
 
+        // Sanitize text
+        const safeText = xss(text || "");
+
         const replyToString = replyTo ? JSON.stringify(replyTo) : null;
 
         await run(`INSERT INTO messages (id, group_id, sender_username, content, type, reply_to, timestamp, attachment_url, attachment_type, original_filename) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [msgId, groupId, user, text || "", type, replyToString, timestamp, attachmentUrl, attachmentType, originalFilename]);
+            [msgId, groupId, user, safeText, type, replyToString, timestamp, attachmentUrl, attachmentType, originalFilename]);
 
         // Insert receipt for sender
         await run(`INSERT INTO message_receipts (message_id, username, received_at, read_at) VALUES (?, ?, ?, ?)`,
@@ -1127,7 +1174,7 @@ wss.on("connection", async (ws, req) => {
         const msgObj = {
             id: msgId,
             user,
-            text: text || "",
+            text: safeText,
             replyTo,
             timestamp,
             attachmentUrl,
@@ -1168,13 +1215,14 @@ wss.on("connection", async (ws, req) => {
                return;
           }
 
-          await run(`UPDATE messages SET content = ?, is_edited = 1 WHERE id = ?`, [text, messageId]);
+          const safeText = xss(text || "");
+          await run(`UPDATE messages SET content = ?, is_edited = 1 WHERE id = ?`, [safeText, messageId]);
 
           broadcastToGroup(groupId, {
               type: "message_updated",
               groupId,
               messageId,
-              text
+              text: safeText
           });
       }
       else if (data.type === "delete_message") {
@@ -1282,6 +1330,7 @@ initDB()
     .then(() => migrate())
     .then(() => updateSchema())
     .then(() => migratePasswords())
+    .then(() => migrateSecurity())
     .then(() => {
         server.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);

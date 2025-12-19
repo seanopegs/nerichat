@@ -77,11 +77,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Init Values
   avatarPreview.src = user.avatar;
   displayNameInput.value = user.displayName;
-  if (user.avatar && user.avatar.includes('ui-avatars.com')) {
+
+  if (user.avatarOriginalName) {
+      avatarInput.value = user.avatarOriginalName;
+      // Also set data-real-url so save logic knows the underlying path
+      avatarInput.setAttribute('data-real-url', user.avatar);
+  } else if (user.avatar && user.avatar.includes('ui-avatars.com')) {
     avatarInput.value = '';
   } else {
-    // Check if it looks like an uploaded file path to show friendly name (optional, but tricky without storing original name)
-    // For now, just show value. If they re-upload, it will fix.
+    // Fallback if no original name stored yet
     avatarInput.value = user.avatar;
   }
 
@@ -93,20 +97,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   saveBtn.addEventListener('click', async () => {
     const displayName = displayNameInput.value;
     let avatar = avatarInput.value.trim();
+    let avatarOriginalName = "";
 
     // Check for hidden upload URL
     const realUrl = avatarInput.getAttribute('data-real-url');
-    // If the input value matches the original filename (roughly), use the real URL
-    // Or simpler: if realUrl exists and input value is not empty (user didn't clear it), use realUrl.
-    // But what if user changed text manually?
-    // Let's say: if input value == originalFilename from upload (we didn't store it separately, just in value).
-    // If user types a URL, it won't have data-real-url set (unless they uploaded then typed).
-    // Safest: If data-real-url is set, and input value DOES NOT start with http/https, use data-real-url.
-    // If input value starts with http, they probably pasted a link.
-    // If input value is a path /uploads/, use it.
 
-    if (realUrl && !avatar.startsWith('http') && !avatar.startsWith('/')) {
-         avatar = realUrl;
+    // Logic:
+    // 1. If user uploaded a file, data-real-url is set, and input value is filename.
+    // 2. If user pasted a URL, input value is URL.
+    // 3. If user has existing file, data-real-url is set (from init), input value is original name.
+
+    if (avatar && realUrl && !avatar.startsWith('http') && !avatar.startsWith('/')) {
+         // It's likely a filename referencing the realUrl
+         avatarOriginalName = avatar; // Save the filename for display next time
+         avatar = realUrl; // Send the path
+    } else {
+        // User typed a URL or cleared it
+        // If it is a URL, we don't really have an "original filename" other than the URL itself
+        // But maybe we don't save avatarOriginalName for external URLs to keep it simple
     }
 
     const password = passwordInput.value;
@@ -117,6 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       username: user.username,
       displayName,
       avatar,
+      avatarOriginalName,
       theme,
       invisible
     };
@@ -157,6 +166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Remove Avatar
   removeAvatarBtn.addEventListener('click', () => {
       avatarInput.value = '';
+      avatarInput.removeAttribute('data-real-url');
       const defaultUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayNameInput.value || user.username)}`;
       avatarPreview.src = defaultUrl;
   });
