@@ -18,7 +18,7 @@ const xss = require("xss");
 const app = express();
 const server = http.createServer(app);
 
-// Trust Proxy for Pterodactyl/Nginx
+// Trust Proxy for Pterodactyl/Nginx kan??
 app.set('trust proxy', 1);
 
 // Helmet Security Headers
